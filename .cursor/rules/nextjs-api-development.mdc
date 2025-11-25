@@ -1,0 +1,202 @@
+---
+description: 后端API的开发规范,API 中间件,标准响应格式 ,数据验证
+globs: 
+alwaysApply: false
+---
+# Next.js API开发规则
+
+## 核心架构
+
+- **API中间件系统**: 使用 [api-middleware.js](mdc:src/lib/api-middleware.js)
+- **标准响应格式**: 使用 [api-response.js](mdc:src/lib/api-response.js) 
+- **数据验证**: 使用 [validators.js](mdc:src/lib/validators.js)
+- **Mongoose连接**: 使用 [mongoose.js](mdc:src/lib/mongoose.js)
+
+## API文件结构
+
+```javascript
+import { createApiHandler, MiddlewarePresets } from '@/lib/api-middleware'
+import { createSuccessResponse, createErrorResponse, ERROR_CODES } from '@/lib/api-response'
+import { validate } from '@/lib/validators'
+import connectDB from '@/lib/mongoose'
+import { Project } from '@/lib/models/Project'
+
+async function handleGET(request, context) {
+  await connectDB()
+  // GET逻辑
+}
+
+async function handlePOST(request, context) {
+  await connectDB()
+  // POST逻辑
+}
+
+export const GET = createApiHandler(handleGET)
+export const POST = createApiHandler(handlePOST, [
+  MiddlewarePresets.authenticated  // API Key认证
+])
+```
+
+## Next.js 15 兼容性
+
+动态路由参数必须await：
+
+```javascript
+export function createApiHandler(handler, middlewares = []) {
+  return async (request, routeContext = {}) => {
+    const runner = new MiddlewareRunner(request)
+    runner.context.params = routeContext.params ? await routeContext.params : {}
+    middlewares.forEach(middleware => runner.use(middleware))
+    return await runner.run(handler)
+  }
+}
+
+async function handleGET(request, context) {
+  const { params } = context  // 已await处理
+  const id = params.id
+}
+```
+
+## 数据库操作
+
+### Mongoose连接
+
+```javascript
+import connectDB from '@/lib/mongoose'
+import { Project } from '@/lib/models/Project'
+
+async function handleGET(request, context) {
+  await connectDB()  // 必须先连接
+  
+  const projects = await Project.find()
+    .sort({ lastTaskAt: -1 })
+    .lean()
+}
+```
+
+### 幂等性更新
+
+```javascript
+const project = await Project.findOneAndUpdate(
+  { projectId: data.project_id },
+  {
+    projectId: data.project_id,
+    name: data.project_name,
+    $setOnInsert: { createdAt: new Date() }
+  },
+  { upsert: true, new: true }
+)
+```
+
+### 嵌入数组更新
+
+```javascript
+// 追加消息
+await Queue.findOneAndUpdate(
+  { _id: queue._id, 'tasks.id': taskId },
+  {
+    $push: {
+      'tasks.$.messages': {
+        role: 'USER',
+        content: messageData.content,
+        createdAt: new Date()
+      }
+    }
+  }
+)
+```
+
+## 响应格式
+
+### 成功响应
+
+```javascript
+return createSuccessResponse(data, '操作成功', 200)
+
+return createPaginatedResponse(
+  items,
+  { page: currentPage, pageSize: size, total: totalCount },
+  '查询成功'
+)
+```
+
+### 错误处理
+
+```javascript
+if (!project) {
+  return createErrorResponse(
+    '项目不存在',
+    ERROR_CODES.RESOURCE_NOT_FOUND,
+    404
+  )
+}
+
+const validator = validate(data)
+validator.required('name')
+if (!validator.isValid()) {
+  return createValidationErrorResponse(validator.getErrors())
+}
+```
+
+## API Key认证
+
+```javascript
+export const POST = createApiHandler(handlePOST, [
+  MiddlewarePresets.authenticated  // 验证X-API-Key
+])
+```
+
+## 常见错误
+
+### ❌ 错误做法
+
+```javascript
+// ❌ 直接访问params
+const id = params.id  // Next.js 15会报错
+
+// ❌ 忘记连接数据库
+const projects = await Project.find()  // 缺少await connectDB()
+
+// ❌ 忘记错误处理
+const project = await Project.findOne({ projectId })
+// 应该检查project是否为null
+
+// ❌ 错误的分页参数格式
+createPaginatedResponse(items, total, page, size)  // 格式错误
+```
+
+### ✅ 正确做法
+
+```javascript
+// ✅ 通过context访问params
+const { params } = context
+const id = params.id
+
+// ✅ 先连接数据库
+await connectDB()
+const projects = await Project.find()
+
+// ✅ 完整错误处理
+const project = await Project.findOne({ projectId })
+if (!project) {
+  return createErrorResponse('项目不存在', ERROR_CODES.RESOURCE_NOT_FOUND, 404)
+}
+
+// ✅ 正确的分页格式
+createPaginatedResponse(items, { page, pageSize, total }, message)
+```
+
+## 性能优化
+
+```javascript
+// 使用select减少数据传输
+const projects = await Project.find()
+  .select('_id projectId name lastTaskAt')
+  .lean()
+
+// 分页查询
+const [items, total] = await Promise.all([
+  Project.find(filters).limit(limit).skip(skip).lean(),
+  Project.countDocuments(filters)
+])
+```

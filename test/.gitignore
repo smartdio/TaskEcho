@@ -1,0 +1,15 @@
+# API Key 文件
+.api_key
+.api_key.*
+.token
+.token.*
+
+# 测试报告
+reports/*.json
+reports/*.html
+reports/*.txt
+
+# 临时文件
+*.tmp
+*.log
+

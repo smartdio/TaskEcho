@@ -1,0 +1,64 @@
+---
+alwaysApply: true
+---
+
+# TaskEcho UI 设计规范
+
+## 设备适配
+- 移动优先：优先适配手机（< 768px），其次平板（768px-1024px），最后桌面（> 1024px）
+- 响应式断点：默认 < 640px，sm 640px，md 768px，lg 1024px，xl 1280px
+- 移动端单列布局，平板可双列，桌面多列布局
+
+## 色彩系统
+- 主背景：`bg-white`，卡片背景：`bg-gray-50`
+- 主文字：`text-gray-900`，次要文字：`text-gray-600`
+- 主要操作：`bg-blue-600` / `text-blue-600`
+- 成功：`bg-green-600`，警告：`bg-yellow-500`，错误：`bg-red-500`
+- 任务状态：Pending `yellow-500`，Running `blue-500`，Done `green-600`，Error `red-500`，Cancelled `gray-500`
+
+## 字体系统
+- 移动端：标题 `text-2xl`，正文 `text-base`，小字 `text-sm`
+- 平板端：标题 `md:text-3xl`，正文 `md:text-base`
+- 桌面端：标题 `lg:text-4xl`，正文 `lg:text-base`
+- 标题使用 `font-semibold` 或 `font-bold`，正文使用 `font-normal`
+
+## 间距系统
+- 基础单位：4px（Tailwind 1 单位）
+- 移动端：页面容器 `px-4`，卡片 `p-4`，元素间距 `mb-4`
+- 平板端：页面容器 `md:px-5`，卡片 `md:p-5`，元素间距 `md:mb-5`
+- 桌面端：页面容器 `lg:px-6`，卡片 `lg:p-6`，元素间距 `lg:mb-6`
+
+## 组件尺寸
+- 按钮：最小高度 44px（`h-11`），移动端 `py-3 px-4`，平板端 `md:py-3.5 md:px-5`，桌面端 `lg:py-4 lg:px-6`
+- 卡片：移动端 `p-4 rounded-lg`，平板端 `md:p-5 md:rounded-lg`，桌面端 `lg:p-6 lg:rounded-xl`，边框 `border border-gray-200`，背景 `bg-gray-50`
+- 输入框：最小高度 44px，内边距同按钮
+- 列表项：最小高度 44px，内边距 `py-3 px-4`
+
+## 触摸交互
+- 所有可点击元素最小尺寸：44×44px（移动端）
+- 按钮、图标按钮、链接、列表项、输入框最小高度：44px
+- 使用 `active:opacity-80` 或 `active:bg-*` 提供按下反馈
+- 桌面端使用 `hover:` 状态，移动端不适用
+
+## 图标系统
+- 使用 Lucide React 图标库
+- 标准图标：移动端 `h-5 w-5`，平板端 `md:h-5.5 md:w-5.5`，桌面端 `lg:h-6 lg:w-6`
+- 图标与文字间距：8-12px
+- 装饰性图标使用 `aria-hidden="true"`，功能性图标提供 `aria-label`
+
+## 视觉层次
+- 通过字体大小、颜色、间距建立层次
+- 标题 > 正文 > 辅助信息
+- 主要信息使用 `text-gray-900`，次要信息使用 `text-gray-600`
+
+## 动画过渡
+- 快速过渡：150ms（悬停、聚焦）
+- 标准过渡：200-300ms（颜色、透明度）
+- 使用 `transition-colors duration-200 ease-in-out`
+- 优先使用 CSS `transform` 和 `opacity`，避免改变布局属性
+
+## 无障碍性
+- 使用语义化 HTML 标签（header、nav、button 等）
+- 按钮提供 `aria-label` 描述
+- 确保文字与背景对比度符合 WCAG AA 标准（4.5:1）
+- 所有交互元素支持键盘操作

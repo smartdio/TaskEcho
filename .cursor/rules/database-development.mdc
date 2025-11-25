@@ -1,0 +1,356 @@
+---
+description: 数据库开发规则 ，模型定义规范 ，数据库操作注意事项
+globs: 
+alwaysApply: false
+---
+# 数据库开发规则
+
+## 核心架构
+
+- **数据库**: MongoDB + Mongoose
+- **嵌入策略**: 消息和日志嵌入到任务文档中
+- **引用策略**: 项目、队列、任务使用引用关系
+
+## 参考文档
+
+- 数据库设计: [doc/spec/database-design.md](mdc:doc/spec/database-design.md)
+- Mongoose 连接: [src/lib/mongoose.js](mdc:src/lib/mongoose.js)
+- 模型定义: [src/lib/models/](mdc:src/lib/models/)
+
+## Schema设计规范
+
+### 模型定义
+
+```javascript
+const mongoose = require('mongoose');
+
+const projectSchema = new mongoose.Schema({
+  projectId: {
+    type: String,
+    required: true,
+    unique: true,
+    index: true
+  },
+  name: {
+    type: String,
+    required: true
+  },
+  lastTaskAt: {
+    type: Date,
+    index: true
+  }
+}, {
+  timestamps: true
+});
+
+// 唯一索引
+projectSchema.index({ projectId: 1 }, { unique: true });
+
+module.exports = mongoose.model('Project', projectSchema);
+```
+
+### 字段类型
+
+```javascript
+// 字符串
+name: { type: String, required: true }
+
+// 枚举
+status: { type: String, enum: ['PENDING', 'DONE', 'ERROR'], default: 'PENDING' }
+
+// 日期
+lastTaskAt: { type: Date, index: true }
+
+// 嵌入文档数组
+messages: [{
+  role: { type: String, enum: ['USER', 'ASSISTANT'], required: true },
+  content: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now }
+}]
+
+// 混合类型（任意JSON）
+meta: { type: mongoose.Schema.Types.Mixed, default: null }
+```
+
+### 关联关系
+
+```javascript
+// 引用关系（项目 -> 队列）
+const queueSchema = new mongoose.Schema({
+  projectId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Project',
+    required: true,
+    index: true
+  }
+});
+
+// 嵌入关系（任务中的消息和日志）
+const taskSchema = new mongoose.Schema({
+  messages: [messageSchema],  // 嵌入消息数组
+  logs: [logSchema]          // 嵌入日志数组
+});
+
+// 查询嵌入数据（自动包含）
+const task = await Task.findById(id);
+console.log(task.messages);  // 直接访问
+```
+
+## Schema变更
+
+新字段使用可选类型或默认值，确保向后兼容：
+
+```javascript
+const taskSchema = new mongoose.Schema({
+  title: String,
+  status: String,
+  // 新字段（可选，有默认值）
+  report: { type: String, default: null }
+});
+```
+
+## 数据库操作
+
+### 基础CRUD
+
+```javascript
+import connectDB from '@/lib/mongoose'
+import { Project } from '@/lib/models/Project'
+
+await connectDB()  // 必须先连接
+
+// 创建
+const project = await Project.create({
+  projectId: 'project_001',
+  name: '示例项目'
+})
+
+// 查询单条
+const project = await Project.findOne({ projectId: 'project_001' }).lean()
+
+// 查询多条
+const projects = await Project.find()
+  .sort({ lastTaskAt: -1 })
+  .limit(10)
+  .skip(0)
+  .lean()
+
+// 更新
+const project = await Project.findByIdAndUpdate(
+  id,
+  { name: '新名称' },
+  { new: true }
+)
+
+// 幂等性更新（upsert）
+const project = await Project.findOneAndUpdate(
+  { projectId: 'project_001' },
+  {
+    projectId: 'project_001',
+    name: '项目名称',
+    $setOnInsert: { createdAt: new Date() }
+  },
+  { upsert: true, new: true }
+)
+```
+
+### 复杂查询
+
+```javascript
+// 条件查询
+const projects = await Project.find({
+  $or: [
+    { name: { $regex: searchTerm, $options: 'i' } },
+    { projectId: { $regex: searchTerm, $options: 'i' } }
+  ]
+}).lean()
+
+// 聚合统计
+const stats = await Project.aggregate([
+  {
+    $group: {
+      _id: null,
+      count: { $sum: 1 },
+      maxLastTaskAt: { $max: '$lastTaskAt' }
+    }
+  }
+])
+
+// 分组统计
+const statusCounts = await Task.aggregate([
+  {
+    $group: {
+      _id: '$status',
+      count: { $sum: 1 }
+    }
+  },
+  { $sort: { count: -1 } }
+])
+```
+
+### 嵌入数组更新
+
+```javascript
+// 追加消息（使用 $push）
+await Queue.findOneAndUpdate(
+  { _id: queue._id, 'tasks.id': taskId },
+  {
+    $push: {
+      'tasks.$.messages': {
+        role: 'USER',
+        content: '新消息',
+        createdAt: new Date()
+      }
+    }
+  }
+)
+
+// 追加日志
+await Queue.findOneAndUpdate(
+  { _id: queue._id, 'tasks.id': taskId },
+  {
+    $push: {
+      'tasks.$.logs': {
+        content: '新日志',
+        createdAt: new Date()
+      }
+    }
+  }
+)
+```
+
+## 性能优化
+
+### 索引策略
+
+```javascript
+const projectSchema = new mongoose.Schema({
+  projectId: String,
+  name: String,
+  lastTaskAt: Date
+});
+
+// 单字段索引
+projectSchema.index({ projectId: 1 });
+projectSchema.index({ lastTaskAt: -1 });
+
+// 唯一索引
+projectSchema.index({ projectId: 1 }, { unique: true });
+```
+
+### 查询优化
+
+```javascript
+// 使用select减少数据传输
+const projects = await Project.find()
+  .select('_id projectId name lastTaskAt')
+  .lean()
+
+// 分页查询
+const [items, total] = await Promise.all([
+  Project.find(filters).limit(limit).skip(skip).lean(),
+  Project.countDocuments(filters)
+])
+```
+
+## 数据验证
+
+### Schema级验证
+
+```javascript
+const projectSchema = new mongoose.Schema({
+  projectId: {
+    type: String,
+    required: true,
+    unique: true
+  },
+  name: {
+    type: String,
+    required: true,
+    maxlength: 200
+  }
+});
+```
+
+### 应用级验证
+
+```javascript
+const createProject = async (data) => {
+  if (!data.projectId || !data.name) {
+    throw new Error('缺少必填字段')
+  }
+  
+  const existing = await Project.findOne({ projectId: data.projectId })
+  if (existing) {
+    throw new Error('项目ID已存在')
+  }
+  
+  return await Project.create(data)
+}
+```
+
+## 安全规范
+
+### NoSQL注入防护
+
+```javascript
+// ✅ 正确 - 使用Mongoose查询（自动防护）
+const projects = await Project.find({
+  name: { $regex: userInput, $options: 'i' }
+})
+
+// ❌ 错误 - 不要直接使用用户输入构建查询
+// const query = JSON.parse(userInput)
+// const projects = await Project.find(query)
+```
+
+## 常见错误
+
+### ❌ 错误做法
+
+```javascript
+// ❌ 忘记连接数据库
+const projects = await Project.find()
+
+// ❌ 无索引查询
+const projects = await Project.find({ name: searchTerm })  // name未建索引
+
+// ❌ N+1查询
+for (const project of projects) {
+  const queues = await Queue.find({ projectId: project._id })  // 循环查询
+}
+
+// ❌ 忽略原子操作
+const task = await Task.findById(taskId)
+task.messages.push(newMessage)  // 应该使用$push
+await task.save()
+```
+
+### ✅ 正确做法
+
+```javascript
+// ✅ 先连接数据库
+await connectDB()
+const projects = await Project.find()
+
+// ✅ 使用索引字段查询
+const projects = await Project.find({ projectId: id })  // projectId有索引
+
+// ✅ 批量查询
+const projectIds = projects.map(p => p._id)
+const queues = await Queue.find({ projectId: { $in: projectIds } })
+
+// ✅ 使用原子操作
+await Queue.findOneAndUpdate(
+  { _id: queue._id, 'tasks.id': taskId },
+  { $push: { 'tasks.$.messages': newMessage } }
+)
+```
+
+## 最佳实践
+
+1. 查询前先连接数据库
+2. 为常用查询字段建立索引
+3. 使用select减少数据传输
+4. 更新嵌入数组使用原子操作
+5. 进行数据验证
