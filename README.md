@@ -1,6 +1,11 @@
 # TaskEcho
 
-TaskEcho 是一个单用户本地任务管理应用，专注于通过 RESTful API 接收和管理外部系统推送的任务数据。应用采用完全只读的界面设计，数据完全由外部客户端通过 API 推送。
+> 本地私有的 API 驱动任务队列与状态监控平台，专注单用户自动化场景的可视化追踪与管理。  
+> A local, API-driven task queue and status monitoring platform for visual tracking and management in single-user automation scenarios.
+
+
+
+TaskEcho 是一个以 API 驱动的本地任务队列管理应用，专为单用户在本地私有环境下，实现对分布式任务、队列和项目的高效可视化管理而设计。所有数据均由外部系统通过 RESTful API 实时推送同步，应用自身采用只读界面，不提供主动编辑功能，安全轻量，适合自动化场景下的任务集中观测与追踪。界面支持响应式布局和深色模式，兼容手机、平板、桌面端，并提供层级化的管理视图与详细任务日志。此外，TaskEcho 可以与 Cursor 搭配，作为 Cursor 编辑器自动化任务的状态监控与收集面板，助力开发者实现工作流自动化与统一管理。
 
 ## 功能特性
 
