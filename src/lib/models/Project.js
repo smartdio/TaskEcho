@@ -24,6 +24,16 @@ const projectSchema = new mongoose.Schema({
       default: null
     }
   },
+  gitInfo: {
+    repository: {
+      type: String,
+      default: null
+    },
+    branch: {
+      type: String,
+      default: null
+    }
+  },
   lastTaskAt: {
     type: Date,
     default: null
@@ -34,6 +44,12 @@ const projectSchema = new mongoose.Schema({
 
 // 普通索引：lastTaskAt（用于首页排序）
 projectSchema.index({ lastTaskAt: -1 });
+
+// 普通索引：gitInfo.repository（用于按仓库过滤查询）
+projectSchema.index({ 'gitInfo.repository': 1 });
+
+// 普通索引：gitInfo.branch（用于按分支过滤查询）
+projectSchema.index({ 'gitInfo.branch': 1 });
 
 const Project = mongoose.models.Project || mongoose.model('Project', projectSchema);
 

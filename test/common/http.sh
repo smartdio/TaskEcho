@@ -242,8 +242,9 @@ assert_field_exists() {
     
     # 优先使用 jq 检查嵌套字段
     if command -v jq &> /dev/null; then
-        local field_value=$(echo "$body" | jq -r ".$field // empty" 2>/dev/null)
-        if [ -n "$field_value" ] && [ "$field_value" != "null" ]; then
+        # 检查字段是否存在（包括null值）
+        # 对于嵌套字段（如 data.customTitle），使用路径检查
+        if echo "$body" | jq -e ".$field" >/dev/null 2>&1; then
             print_result "PASS" "$message" "字段 '$field' 存在"
             return 0
         else

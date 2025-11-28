@@ -60,6 +60,36 @@ function validateSubmitData(data) {
     }
   }
   
+  // 验证 gitInfo（可选）
+  if (data.gitInfo !== undefined) {
+    if (typeof data.gitInfo !== 'object' || data.gitInfo === null) {
+      errors.push({ field: 'gitInfo', reason: 'gitInfo 必须是对象' });
+    } else {
+      // 验证 repository：如果提供，必须是有效的非空字符串，长度不超过 500 个字符
+      if (data.gitInfo.repository !== undefined) {
+        if (typeof data.gitInfo.repository !== 'string') {
+          errors.push({ field: 'gitInfo.repository', reason: 'gitInfo.repository 必须是字符串' });
+        } else if (data.gitInfo.repository.trim().length === 0) {
+          // 空字符串或只包含空白字符视为无效，将被转换为 null
+          // 这里不报错，因为处理逻辑会将空字符串转换为 null
+        } else if (data.gitInfo.repository.length > 500) {
+          errors.push({ field: 'gitInfo.repository', reason: 'gitInfo.repository 长度不能超过500个字符' });
+        }
+      }
+      // 验证 branch：如果提供，必须是有效的非空字符串，长度不超过 255 个字符
+      if (data.gitInfo.branch !== undefined) {
+        if (typeof data.gitInfo.branch !== 'string') {
+          errors.push({ field: 'gitInfo.branch', reason: 'gitInfo.branch 必须是字符串' });
+        } else if (data.gitInfo.branch.trim().length === 0) {
+          // 空字符串或只包含空白字符视为无效，将被转换为 null
+          // 这里不报错，因为处理逻辑会将空字符串转换为 null
+        } else if (data.gitInfo.branch.length > 255) {
+          errors.push({ field: 'gitInfo.branch', reason: 'gitInfo.branch 长度不能超过255个字符' });
+        }
+      }
+    }
+  }
+  
   if (!data.tasks || !Array.isArray(data.tasks) || data.tasks.length === 0) {
     errors.push({ field: 'tasks', reason: 'tasks 必须是非空数组' });
   }
@@ -321,6 +351,30 @@ async function handlePOST(request, context) {
       }));
     } else {
       console.log(`[Submit API] [${requestId}] 未提供 clientInfo`);
+    }
+    
+    // 如果提供了 gitInfo，则更新它（支持部分更新）
+    if (data.gitInfo) {
+      // 获取现有的 gitInfo（如果项目已存在）
+      const existingGitInfo = existingProject?.gitInfo || {};
+      
+      // 构建新的 gitInfo 对象
+      // 如果提供了字段，则使用提供的值（空字符串转换为 null）；如果未提供，则保留现有值
+      const newGitInfo = {
+        repository: data.gitInfo.repository !== undefined 
+          ? (data.gitInfo.repository && data.gitInfo.repository.trim() ? data.gitInfo.repository.trim() : null)
+          : (existingGitInfo.repository || null),
+        branch: data.gitInfo.branch !== undefined
+          ? (data.gitInfo.branch && data.gitInfo.branch.trim() ? data.gitInfo.branch.trim() : null)
+          : (existingGitInfo.branch || null)
+      };
+      
+      // 设置整个 gitInfo 对象，确保 Mongoose 正确处理嵌套对象
+      projectUpdate.$set['gitInfo'] = newGitInfo;
+      
+      console.log(`[Submit API] [${requestId}] 保存 gitInfo:`, JSON.stringify(newGitInfo));
+    } else {
+      console.log(`[Submit API] [${requestId}] 未提供 gitInfo`);
     }
     
     console.log(`[Submit API] [${requestId}] 执行项目 Upsert 操作...`);

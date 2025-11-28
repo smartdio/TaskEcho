@@ -7,7 +7,7 @@ import { SearchSection } from '@/components/project/SearchSection'
 import { ProjectStatsSection } from '@/components/project/ProjectStatsSection'
 import { QueueList } from '@/components/project/QueueList'
 import { Button } from '@/components/ui/button'
-import { RefreshCw, AlertCircle, MoreVertical, Edit, Trash2, FolderKanban, User, Folder } from 'lucide-react'
+import { RefreshCw, AlertCircle, MoreVertical, Edit, Trash2, FolderKanban, User, Folder, GitBranch, Link as LinkIcon, Tag } from 'lucide-react'
 import { useToast as useShadcnToast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
 import { useVisibilityAwarePolling } from '@/hooks/useVisibilityAwarePolling'
@@ -40,7 +40,9 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent } from '@/components/ui/card'
+import { TagInput } from '@/components/project/TagInput'
 
 const POLLING_INTERVAL = 30000 // 30秒轮询间隔
 
@@ -125,6 +127,14 @@ export default function ProjectDetailPage() {
   const [editName, setEditName] = useState('')
   const [isDeleting, setIsDeleting] = useState(false)
   const [isUpdating, setIsUpdating] = useState(false)
+  
+  // 元数据编辑相关状态
+  const [metadataDialogOpen, setMetadataDialogOpen] = useState(false)
+  const [customTitle, setCustomTitle] = useState('')
+  const [notes, setNotes] = useState('')
+  const [tags, setTags] = useState([])
+  const [isLoadingMetadata, setIsLoadingMetadata] = useState(false)
+  const [isSavingMetadata, setIsSavingMetadata] = useState(false)
 
   // 创建获取数据的函数
   const fetchData = useCallback(() => {
@@ -173,6 +183,9 @@ export default function ProjectDetailPage() {
   // 提取数据
   const project = data?.project || null
   const trendData = data?.trendData || []
+  
+  // 获取显示标题：优先使用 displayTitle，否则使用 name
+  const displayTitle = project?.displayTitle || project?.name || '项目详情'
   
   // 准备项目统计数据
   const projectStats = project ? {
@@ -253,6 +266,133 @@ export default function ProjectDetailPage() {
       setIsUpdating(false)
     }
   }, [projectId, editName, toast, refetch])
+
+  // 打开元数据编辑对话框
+  const handleOpenMetadataDialog = useCallback(async () => {
+    if (!projectId) return
+    
+    setMetadataDialogOpen(true)
+    setIsLoadingMetadata(true)
+    
+    try {
+      const { fetchWithAuth } = await import('@/lib/fetch-utils')
+      const encodedProjectId = encodeURIComponent(projectId)
+      const response = await fetchWithAuth(`/api/v1/projects/${encodedProjectId}/metadata`)
+      
+      if (!response.ok) {
+        throw new Error(`获取元数据失败: ${response.status}`)
+      }
+      
+      const result = await response.json()
+      
+      if (result.success && result.data) {
+        setCustomTitle(result.data.customTitle || '')
+        setNotes(result.data.notes || '')
+        setTags(result.data.tags || [])
+      } else {
+        // 如果元数据不存在，使用默认值
+        setCustomTitle('')
+        setNotes('')
+        setTags([])
+      }
+    } catch (error) {
+      console.error('加载元数据失败:', error)
+      toast({
+        title: '加载失败',
+        description: error.message || '请稍后重试',
+        variant: 'destructive'
+      })
+      // 使用默认值
+      setCustomTitle('')
+      setNotes('')
+      setTags([])
+    } finally {
+      setIsLoadingMetadata(false)
+    }
+  }, [projectId, toast])
+
+  // 保存元数据
+  const handleSaveMetadata = useCallback(async () => {
+    if (!projectId) return
+
+    // 验证数据
+    if (customTitle.length > 200) {
+      toast({
+        title: '错误',
+        description: '自定义标题不能超过200个字符',
+        variant: 'destructive'
+      })
+      return
+    }
+
+    if (notes.length > 5000) {
+      toast({
+        title: '错误',
+        description: '备注不能超过5000个字符',
+        variant: 'destructive'
+      })
+      return
+    }
+
+    if (tags.length > 20) {
+      toast({
+        title: '错误',
+        description: '标签数量不能超过20个',
+        variant: 'destructive'
+      })
+      return
+    }
+
+    // 处理标签：去重、转小写、过滤空字符串（后端也会处理，但前端先处理一下）
+    const processedTags = [...new Set(
+      tags
+        .map(tag => tag.trim().toLowerCase())
+        .filter(tag => tag.length > 0 && tag.length <= 50)
+    )]
+
+    setIsSavingMetadata(true)
+    try {
+      const { fetchWithAuth } = await import('@/lib/fetch-utils')
+      const encodedProjectId = encodeURIComponent(projectId)
+      const response = await fetchWithAuth(`/api/v1/projects/${encodedProjectId}/metadata`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          customTitle: customTitle.trim() || null,
+          notes: notes.trim() || null,
+          tags: processedTags
+        })
+      })
+
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error?.message || '保存失败')
+      }
+
+      toast({
+        title: '成功',
+        description: '项目信息已保存',
+        variant: 'default'
+      })
+
+      // 关闭对话框
+      setMetadataDialogOpen(false)
+
+      // 刷新项目数据
+      refetch()
+    } catch (error) {
+      toast({
+        title: '保存失败',
+        description: error.message || '请稍后重试',
+        variant: 'destructive'
+      })
+    } finally {
+      setIsSavingMetadata(false)
+    }
+  }, [projectId, customTitle, notes, tags, toast, refetch])
 
   // 删除项目
   const handleDeleteProject = useCallback(async () => {
@@ -336,7 +476,7 @@ export default function ProjectDetailPage() {
           <Breadcrumb
             items={[
               {
-                label: project?.name || '项目',
+                label: displayTitle,
                 href: project ? `/project/${encodedProjectId}` : undefined
               }
             ]}
@@ -378,35 +518,46 @@ export default function ProjectDetailPage() {
           <div className="flex items-center justify-between mb-4 md:mb-5 lg:mb-6">
             <h1 className="text-2xl md:text-3xl lg:text-4xl font-semibold text-gray-900 dark:text-gray-50 flex items-center gap-2 md:gap-3">
               <FolderKanban className="h-6 w-6 md:h-7 md:w-7 lg:h-8 lg:w-8 text-blue-600 dark:text-blue-400 shrink-0" aria-hidden="true" />
-              <span>{project?.name || '项目详情'}</span>
+              <span>{displayTitle}</span>
             </h1>
             {project && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-9 md:h-10 px-3 md:px-4"
-                    aria-label="管理菜单"
-                  >
-                    <MoreVertical className="h-4 w-4 md:h-5 md:w-5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={handleOpenEditDialog}>
-                    <Edit className="mr-2 h-4 w-4" />
-                    <span>编辑</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={handleOpenDeleteDialog}
-                    className="text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-900/20"
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    <span>删除</span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleOpenMetadataDialog}
+                  className="h-9 md:h-10 px-3 md:px-4"
+                  aria-label="编辑项目信息"
+                >
+                  <Tag className="h-4 w-4 md:h-5 md:w-5" />
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-9 md:h-10 px-3 md:px-4"
+                      aria-label="管理菜单"
+                    >
+                      <MoreVertical className="h-4 w-4 md:h-5 md:w-5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={handleOpenEditDialog}>
+                      <Edit className="mr-2 h-4 w-4" />
+                      <span>编辑</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={handleOpenDeleteDialog}
+                      className="text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-900/20"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      <span>删除</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             )}
           </div>
 
@@ -472,6 +623,45 @@ export default function ProjectDetailPage() {
                         </p>
                         <p className="text-sm md:text-base text-gray-900 dark:text-gray-50 wrap-break-word font-mono">
                           {project.clientInfo.project_path}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Git 信息卡片 */}
+          {!isInitialLoading && !error && project?.gitInfo && (project.gitInfo.repository || project.gitInfo.branch) && (
+            <Card className="mb-4 md:mb-5 lg:mb-6 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+              <CardContent className="p-4 md:p-5 lg:p-6">
+                <h2 className="text-lg md:text-xl lg:text-xl font-semibold text-gray-900 dark:text-gray-50 mb-3 md:mb-4">
+                  Git 信息
+                </h2>
+                <div className="space-y-3 md:space-y-4">
+                  {project.gitInfo.repository && (
+                    <div className="flex items-start gap-3 md:gap-4">
+                      <LinkIcon className="h-5 w-5 md:h-5 md:w-5 lg:h-6 lg:w-6 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" aria-hidden="true" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs md:text-sm text-gray-600 dark:text-gray-400 mb-1">
+                          仓库地址
+                        </p>
+                        <p className="text-sm md:text-base text-gray-900 dark:text-gray-50 wrap-break-word font-mono">
+                          {project.gitInfo.repository}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {project.gitInfo.branch && (
+                    <div className="flex items-start gap-3 md:gap-4">
+                      <GitBranch className="h-5 w-5 md:h-5 md:w-5 lg:h-6 lg:w-6 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" aria-hidden="true" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs md:text-sm text-gray-600 dark:text-gray-400 mb-1">
+                          分支
+                        </p>
+                        <p className="text-sm md:text-base text-gray-900 dark:text-gray-50 wrap-break-word">
+                          {project.gitInfo.branch}
                         </p>
                       </div>
                     </div>
@@ -573,7 +763,7 @@ export default function ProjectDetailPage() {
                 </div>
                 <div className="text-base text-muted-foreground">
                   <div className="mb-2">
-                    确定要删除项目「<strong>{project?.name || ''}</strong>」吗？
+                    确定要删除项目「<strong>{displayTitle}</strong>」吗？
                   </div>
                   <div className="text-sm text-gray-600 dark:text-gray-400">
                     删除后，该项目下的所有任务队列和任务将被永久删除。此操作不可恢复。
@@ -598,6 +788,88 @@ export default function ProjectDetailPage() {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+
+          {/* 元数据编辑对话框 */}
+          <Dialog open={metadataDialogOpen} onOpenChange={setMetadataDialogOpen}>
+            <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>编辑项目信息</DialogTitle>
+                <DialogDescription>
+                  自定义项目标题、备注和标签
+                </DialogDescription>
+              </DialogHeader>
+              {isLoadingMetadata ? (
+                <div className="flex items-center justify-center py-8">
+                  <RefreshCw className="h-6 w-6 animate-spin text-blue-600" />
+                  <span className="ml-2 text-gray-600 dark:text-gray-400">加载中...</span>
+                </div>
+              ) : (
+                <div className="space-y-4 py-4">
+                  {/* 自定义标题输入框 */}
+                  <div className="space-y-2">
+                    <Label htmlFor="custom-title">自定义标题</Label>
+                    <Input
+                      id="custom-title"
+                      value={customTitle}
+                      onChange={(e) => setCustomTitle(e.target.value)}
+                      placeholder="留空则使用项目名称"
+                      disabled={isSavingMetadata}
+                      className="h-11"
+                      maxLength={200}
+                    />
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      已输入 {customTitle.length} / 200 字符
+                    </p>
+                  </div>
+
+                  {/* 备注输入框 */}
+                  <div className="space-y-2">
+                    <Label htmlFor="notes">备注</Label>
+                    <Textarea
+                      id="notes"
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      placeholder="添加项目备注信息..."
+                      disabled={isSavingMetadata}
+                      className="min-h-[120px] resize-y"
+                      maxLength={5000}
+                    />
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      已输入 {notes.length} / 5000 字符
+                    </p>
+                  </div>
+
+                  {/* 标签管理 */}
+                  <div className="space-y-2">
+                    <Label>标签</Label>
+                    <TagInput
+                      tags={tags}
+                      onTagsChange={setTags}
+                      maxTags={20}
+                      maxTagLength={50}
+                    />
+                  </div>
+                </div>
+              )}
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button
+                  variant="outline"
+                  onClick={() => setMetadataDialogOpen(false)}
+                  disabled={isSavingMetadata || isLoadingMetadata}
+                  className="h-11"
+                >
+                  取消
+                </Button>
+                <Button
+                  onClick={handleSaveMetadata}
+                  disabled={isSavingMetadata || isLoadingMetadata}
+                  className="h-11"
+                >
+                  {isSavingMetadata ? '保存中...' : '保存'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </main>
       </div>
     </AuthGuard>

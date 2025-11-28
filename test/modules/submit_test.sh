@@ -414,6 +414,250 @@ EOF
     assert_json_field "$response" "success" "false" "响应success应为false"
 }
 
+# 测试函数：提交带完整 gitInfo 的项目
+test_submit_with_git_info() {
+    ensure_api_key || return 1
+    
+    local data=$(cat <<EOF
+{
+  "project_id": "$TEST_PROJECT_ID",
+  "project_name": "测试项目",
+  "gitInfo": {
+    "repository": "https://github.com/user/repo.git",
+    "branch": "main"
+  },
+  "queue_id": "$TEST_QUEUE_ID",
+  "queue_name": "测试队列",
+  "tasks": [
+    {
+      "id": "1",
+      "name": "测试任务",
+      "prompt": "测试提示",
+      "status": "pending"
+    }
+  ]
+}
+EOF
+)
+    
+    local response=$(http_post "/api/v1/submit" "$data" true)
+    assert_status "$response" "200" "提交带gitInfo的项目应返回200"
+    assert_json_field "$response" "success" "true" "响应success应为true"
+}
+
+# 测试函数：提交带部分 gitInfo 的项目（只有 repository）
+test_submit_with_partial_git_info_repository() {
+    ensure_api_key || return 1
+    
+    local data=$(cat <<EOF
+{
+  "project_id": "$TEST_PROJECT_ID",
+  "project_name": "测试项目",
+  "gitInfo": {
+    "repository": "https://github.com/user/repo.git"
+  },
+  "queue_id": "$TEST_QUEUE_ID",
+  "queue_name": "测试队列",
+  "tasks": [
+    {
+      "id": "1",
+      "name": "测试任务",
+      "prompt": "测试提示",
+      "status": "pending"
+    }
+  ]
+}
+EOF
+)
+    
+    local response=$(http_post "/api/v1/submit" "$data" true)
+    assert_status "$response" "200" "提交带部分gitInfo（repository）的项目应返回200"
+    assert_json_field "$response" "success" "true" "响应success应为true"
+}
+
+# 测试函数：提交带部分 gitInfo 的项目（只有 branch）
+test_submit_with_partial_git_info_branch() {
+    ensure_api_key || return 1
+    
+    local data=$(cat <<EOF
+{
+  "project_id": "$TEST_PROJECT_ID",
+  "project_name": "测试项目",
+  "gitInfo": {
+    "branch": "develop"
+  },
+  "queue_id": "$TEST_QUEUE_ID",
+  "queue_name": "测试队列",
+  "tasks": [
+    {
+      "id": "1",
+      "name": "测试任务",
+      "prompt": "测试提示",
+      "status": "pending"
+    }
+  ]
+}
+EOF
+)
+    
+    local response=$(http_post "/api/v1/submit" "$data" true)
+    assert_status "$response" "200" "提交带部分gitInfo（branch）的项目应返回200"
+    assert_json_field "$response" "success" "true" "响应success应为true"
+}
+
+# 测试函数：验证 gitInfo 字段格式（无效格式应返回 400）
+test_submit_invalid_git_info() {
+    ensure_api_key || return 1
+    
+    local data=$(cat <<EOF
+{
+  "project_id": "$TEST_PROJECT_ID",
+  "project_name": "测试项目",
+  "gitInfo": "invalid_string",
+  "queue_id": "$TEST_QUEUE_ID",
+  "queue_name": "测试队列",
+  "tasks": [
+    {
+      "id": "1",
+      "name": "测试任务",
+      "prompt": "测试提示",
+      "status": "pending"
+    }
+  ]
+}
+EOF
+)
+    
+    local response=$(http_post "/api/v1/submit" "$data" true)
+    assert_status "$response" "400" "无效gitInfo格式应返回400"
+    assert_json_field "$response" "success" "false" "响应success应为false"
+}
+
+# 测试函数：验证 gitInfo.repository 长度限制（超过 500 字符应返回 400）
+test_submit_git_info_repository_too_long() {
+    ensure_api_key || return 1
+    
+    # 生成一个超过 500 字符的 repository 字符串
+    local long_repo=$(printf 'a%.0s' {1..501})
+    
+    local data=$(cat <<EOF
+{
+  "project_id": "$TEST_PROJECT_ID",
+  "project_name": "测试项目",
+  "gitInfo": {
+    "repository": "$long_repo",
+    "branch": "main"
+  },
+  "queue_id": "$TEST_QUEUE_ID",
+  "queue_name": "测试队列",
+  "tasks": [
+    {
+      "id": "1",
+      "name": "测试任务",
+      "prompt": "测试提示",
+      "status": "pending"
+    }
+  ]
+}
+EOF
+)
+    
+    local response=$(http_post "/api/v1/submit" "$data" true)
+    assert_status "$response" "400" "repository超过500字符应返回400"
+    assert_json_field "$response" "success" "false" "响应success应为false"
+}
+
+# 测试函数：验证 gitInfo.branch 长度限制（超过 255 字符应返回 400）
+test_submit_git_info_branch_too_long() {
+    ensure_api_key || return 1
+    
+    # 生成一个超过 255 字符的 branch 字符串
+    local long_branch=$(printf 'a%.0s' {1..256})
+    
+    local data=$(cat <<EOF
+{
+  "project_id": "$TEST_PROJECT_ID",
+  "project_name": "测试项目",
+  "gitInfo": {
+    "repository": "https://github.com/user/repo.git",
+    "branch": "$long_branch"
+  },
+  "queue_id": "$TEST_QUEUE_ID",
+  "queue_name": "测试队列",
+  "tasks": [
+    {
+      "id": "1",
+      "name": "测试任务",
+      "prompt": "测试提示",
+      "status": "pending"
+    }
+  ]
+}
+EOF
+)
+    
+    local response=$(http_post "/api/v1/submit" "$data" true)
+    assert_status "$response" "400" "branch超过255字符应返回400"
+    assert_json_field "$response" "success" "false" "响应success应为false"
+}
+
+# 测试函数：验证 gitInfo 部分更新功能
+test_submit_git_info_partial_update() {
+    ensure_api_key || return 1
+    
+    # 第一次提交：完整的 gitInfo
+    local data1=$(cat <<EOF
+{
+  "project_id": "$TEST_PROJECT_ID",
+  "project_name": "测试项目",
+  "gitInfo": {
+    "repository": "https://github.com/user/repo.git",
+    "branch": "main"
+  },
+  "queue_id": "$TEST_QUEUE_ID",
+  "queue_name": "测试队列",
+  "tasks": [
+    {
+      "id": "1",
+      "name": "测试任务",
+      "prompt": "测试提示",
+      "status": "pending"
+    }
+  ]
+}
+EOF
+)
+    
+    local response1=$(http_post "/api/v1/submit" "$data1" true)
+    assert_status "$response1" "200" "第一次提交应返回200"
+    
+    # 第二次提交：只更新 branch，repository 应该保留
+    local data2=$(cat <<EOF
+{
+  "project_id": "$TEST_PROJECT_ID",
+  "project_name": "测试项目",
+  "gitInfo": {
+    "branch": "develop"
+  },
+  "queue_id": "$TEST_QUEUE_ID",
+  "queue_name": "测试队列",
+  "tasks": [
+    {
+      "id": "1",
+      "name": "测试任务",
+      "prompt": "测试提示",
+      "status": "pending"
+    }
+  ]
+}
+EOF
+)
+    
+    local response2=$(http_post "/api/v1/submit" "$data2" true)
+    assert_status "$response2" "200" "第二次提交（部分更新）应返回200"
+    assert_json_field "$response2" "success" "true" "响应success应为true"
+}
+
 # 运行所有测试
 run_module_tests() {
     print_header "$TEST_MODULE 测试"
@@ -433,6 +677,13 @@ run_module_tests() {
     run_test "提交带meta数据的队列" test_submit_with_meta
     run_test "提交带clientInfo的项目" test_submit_with_client_info
     run_test "无效clientInfo格式验证" test_submit_invalid_client_info
+    run_test "提交带完整gitInfo的项目" test_submit_with_git_info
+    run_test "提交带部分gitInfo（repository）的项目" test_submit_with_partial_git_info_repository
+    run_test "提交带部分gitInfo（branch）的项目" test_submit_with_partial_git_info_branch
+    run_test "无效gitInfo格式验证" test_submit_invalid_git_info
+    run_test "gitInfo.repository长度限制验证" test_submit_git_info_repository_too_long
+    run_test "gitInfo.branch长度限制验证" test_submit_git_info_branch_too_long
+    run_test "gitInfo部分更新功能验证" test_submit_git_info_partial_update
     
     print_test_summary
     return $?

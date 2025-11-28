@@ -56,6 +56,15 @@ X-API-Key: <api_key_value>
 {
   "project_id": "project_001",
   "project_name": "示例项目",
+  "clientInfo": {
+    "username": "user",
+    "hostname": "hostname",
+    "project_path": "/path/to/project"
+  },
+  "gitInfo": {
+    "repository": "https://github.com/user/repo.git",
+    "branch": "main"
+  },
   "queue_id": "queue_001",
   "queue_name": "任务队列1",
   "meta": {
@@ -95,10 +104,34 @@ X-API-Key: <api_key_value>
 |--------|------|------|------|------|
 | `project_id` | string | 是 | 项目外部唯一标识，用于幂等性判断 | `"project_001"` |
 | `project_name` | string | 是 | 项目显示名称，如果项目已存在则更新此名称 | `"示例项目"` |
+| `clientInfo` | object | 否 | 客户端信息 | `{"username": "user", "hostname": "hostname", "project_path": "/path/to/project"}` |
+| `gitInfo` | object | 否 | Git 信息 | `{"repository": "https://github.com/user/repo.git", "branch": "main"}` |
 | `queue_id` | string | 是 | 任务队列外部唯一标识（在项目内唯一） | `"queue_001"` |
 | `queue_name` | string | 是 | 任务队列显示名称，如果队列已存在则更新此名称 | `"任务队列1"` |
 | `meta` | object | 否 | 元数据信息（类似 prompts） | `{"prompts": [".flow/skills/spcewriter.md"]}` |
 | `tasks` | array | 是 | 任务数组，至少包含一个任务 | `[{...}]` |
+
+**clientInfo 对象参数说明**:
+
+| 参数名 | 类型 | 必填 | 说明 | 示例 |
+|--------|------|------|------|------|
+| `username` | string | 否 | 用户名，最大长度 255 字符 | `"user"` |
+| `hostname` | string | 否 | 主机名，最大长度 255 字符 | `"hostname"` |
+| `project_path` | string | 否 | 项目路径，最大长度 1000 字符 | `"/path/to/project"` |
+
+**gitInfo 对象参数说明**:
+
+| 参数名 | 类型 | 必填 | 说明 | 示例 |
+|--------|------|------|------|------|
+| `repository` | string | 否 | Git 仓库地址，最大长度 500 字符。如果提供空字符串，将被转换为 null | `"https://github.com/user/repo.git"` 或 `"git@github.com:user/repo.git"` |
+| `branch` | string | 否 | Git 分支名称，最大长度 255 字符。如果提供空字符串，将被转换为 null | `"main"` 或 `"develop"` |
+
+**gitInfo 验证规则**:
+- `gitInfo` 对象为可选字段，如果未提供，不会更新项目的 gitInfo 字段（保持现有值或为 null）
+- `repository` 和 `branch` 字段均为可选，支持部分更新（只提供 `repository` 或只提供 `branch`）
+- 如果提供了 `repository` 或 `branch` 但值为空字符串或只包含空白字符，将被自动转换为 null
+- 如果提供了 `repository` 或 `branch`，值会被自动去除首尾空白字符
+- 支持部分更新：如果只提供了 `repository`，则只更新 `repository`，`branch` 保持现有值；反之亦然
 
 **任务对象 (tasks[]) 参数说明**:
 
@@ -524,6 +557,21 @@ curl -X POST .../log -d '{"content": "任务执行完成"}'
         "id": "507f1f77bcf86cd799439011",
         "project_id": "project_001",
         "name": "示例项目",
+        "displayTitle": "我的自定义标题",
+        "metadata": {
+          "customTitle": "我的自定义标题",
+          "notes": "这是项目的备注信息",
+          "tags": ["前端", "React", "重要"]
+        },
+        "clientInfo": {
+          "username": "user",
+          "hostname": "hostname",
+          "project_path": "/path/to/project"
+        },
+        "gitInfo": {
+          "repository": "https://github.com/user/repo.git",
+          "branch": "main"
+        },
         "queue_count": 3,
         "task_count": 15,
         "task_stats": {
@@ -553,6 +601,18 @@ curl -X POST .../log -d '{"content": "任务执行完成"}'
 - `data.items[].id`: 项目内部ID（数据库主键）
 - `data.items[].project_id`: 项目外部唯一标识
 - `data.items[].name`: 项目显示名称
+- `data.items[].displayTitle`: 项目显示标题，优先使用 `metadata.customTitle`，如果为空则使用 `name`
+- `data.items[].metadata`: 项目元数据对象（可能为 null）
+  - `customTitle`: 自定义标题（可能为 null）
+  - `notes`: 备注信息（可能为 null）
+  - `tags`: 标签数组（可能为空数组）
+- `data.items[].clientInfo`: 客户端信息对象（可能为 null）
+  - `username`: 用户名（可能为 null）
+  - `hostname`: 主机名（可能为 null）
+  - `project_path`: 项目路径（可能为 null）
+- `data.items[].gitInfo`: Git 信息对象（可能为 null）
+  - `repository`: Git 仓库地址（可能为 null）
+  - `branch`: Git 分支名称（可能为 null）
 - `data.items[].queue_count`: 项目下的任务队列数量
 - `data.items[].task_count`: 项目下的任务总数
 - `data.items[].task_stats`: 任务统计信息
@@ -566,6 +626,10 @@ curl -X POST .../log -d '{"content": "任务执行完成"}'
   - `pageSize`: 每页数量
   - `total`: 总记录数
   - `totalPages`: 总页数
+
+**注意**: 
+- `displayTitle` 字段逻辑：如果 `metadata.customTitle` 存在且不为空，则使用 `customTitle`，否则使用 `name`
+- `metadata` 字段：如果项目没有元数据记录，该字段为 `null`；如果有元数据，则包含 `customTitle`、`notes` 和 `tags` 字段
 
 **排序规则**: 按 `last_task_at`（最后任务更新时间）倒序排列，如果 `last_task_at` 为 NULL，按 `created_at`（创建时间）倒序排列。
 
@@ -598,6 +662,15 @@ curl -X POST .../log -d '{"content": "任务执行完成"}'
     "id": "507f1f77bcf86cd799439011",
     "project_id": "project_001",
     "name": "示例项目",
+    "clientInfo": {
+      "username": "user",
+      "hostname": "hostname",
+      "project_path": "/path/to/project"
+    },
+    "gitInfo": {
+      "repository": "https://github.com/user/repo.git",
+      "branch": "main"
+    },
     "queue_count": 3,
     "task_count": 15,
     "task_stats": {
@@ -619,6 +692,13 @@ curl -X POST .../log -d '{"content": "任务执行完成"}'
 - `data.id`: 项目内部ID（数据库主键）
 - `data.project_id`: 项目外部唯一标识
 - `data.name`: 项目显示名称
+- `data.clientInfo`: 客户端信息对象（可能为 null）
+  - `username`: 用户名（可能为 null）
+  - `hostname`: 主机名（可能为 null）
+  - `project_path`: 项目路径（可能为 null）
+- `data.gitInfo`: Git 信息对象（可能为 null）
+  - `repository`: Git 仓库地址（可能为 null）
+  - `branch`: Git 分支名称（可能为 null）
 - `data.queue_count`: 项目下的任务队列数量
 - `data.task_count`: 项目下的任务总数
 - `data.task_stats`: 任务统计信息

@@ -7,8 +7,10 @@ import { ProjectCard } from './ProjectCard'
  * @param {Object} props
  * @param {Array} props.projects - 项目列表
  * @param {boolean} props.loading - 加载状态
+ * @param {string} props.searchKeyword - 搜索关键词，用于高亮显示
+ * @param {Function} props.onTagClick - 标签点击回调函数
  */
-export function ProjectList({ projects = [], loading }) {
+export function ProjectList({ projects = [], loading, searchKeyword = '', onTagClick }) {
   if (loading) {
     return (
       <div className="space-y-4 md:space-y-5 lg:space-y-6">
@@ -42,7 +44,12 @@ export function ProjectList({ projects = [], loading }) {
   return (
     <div className="space-y-4 md:space-y-5 lg:space-y-6">
       {projects.map((project) => (
-        <ProjectCard key={project.id || project.project_id} project={project} />
+        <ProjectCard 
+          key={project.id || project.project_id} 
+          project={project}
+          searchKeyword={searchKeyword}
+          onTagClick={onTagClick}
+        />
       ))}
     </div>
   )

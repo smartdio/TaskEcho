@@ -12,7 +12,7 @@ TEST_MODULE="项目详情页接口测试"
 
 # 获取一个有效的项目ID（用于测试）
 get_test_project_id() {
-    local response=$(http_get "/api/v1/projects?page=1&pageSize=1" false)
+    local response=$(http_get "/api/v1/projects?page=1&pageSize=1" true)
     # 分离响应体和状态码
     local body=$(echo "$response" | sed 's/|.*$//')
     local http_code=$(echo "$response" | sed 's/^.*|//')
@@ -43,7 +43,7 @@ test_get_project_detail() {
         return 0
     fi
     
-    local response=$(http_get "/api/v1/projects/$project_id" false)
+    local response=$(http_get "/api/v1/projects/$project_id" true)
     assert_status "$response" "200" "获取项目详情应返回200"
     assert_json_field "$response" "success" "true" "响应success应为true"
     assert_field_exists "$response" "data" "响应应包含data字段"
@@ -52,6 +52,8 @@ test_get_project_detail() {
     assert_field_exists "$response" "data.id" "项目应包含id字段"
     assert_field_exists "$response" "data.project_id" "项目应包含project_id字段"
     assert_field_exists "$response" "data.name" "项目应包含name字段"
+    assert_field_exists "$response" "data.displayTitle" "项目应包含displayTitle字段"
+    assert_field_exists "$response" "data.metadata" "项目应包含metadata字段"
     assert_field_exists "$response" "data.queue_count" "项目应包含queue_count字段"
     assert_field_exists "$response" "data.task_count" "项目应包含task_count字段"
     assert_field_exists "$response" "data.task_stats" "项目应包含task_stats字段"
@@ -61,11 +63,31 @@ test_get_project_detail() {
     assert_field_exists "$response" "data.task_stats.pending" "task_stats应包含pending字段"
     assert_field_exists "$response" "data.task_stats.done" "task_stats应包含done字段"
     assert_field_exists "$response" "data.task_stats.error" "task_stats应包含error字段"
+    
+    # 验证displayTitle：如果没有metadata或customTitle为空，应该等于name
+    local display_title=$(echo "$response" | jq -r '.data.displayTitle // empty')
+    local name=$(echo "$response" | jq -r '.data.name // empty')
+    
+    if [ -z "$display_title" ]; then
+        print_error "displayTitle不应为空"
+        return 1
+    fi
+    
+    # displayTitle应该至少等于name（如果没有customTitle）
+    if [ "$display_title" != "$name" ]; then
+        # 如果有customTitle，displayTitle可能不等于name，这是正常的
+        local metadata_custom_title=$(echo "$response" | jq -r '.data.metadata.customTitle // empty')
+        if [ "$metadata_custom_title" = "null" ] || [ -z "$metadata_custom_title" ]; then
+            # 如果没有customTitle，displayTitle应该等于name
+            print_error "没有customTitle时，displayTitle($display_title)应等于name($name)"
+            return 1
+        fi
+    fi
 }
 
 # 测试函数：获取项目详情（不存在的项目ID）
 test_get_project_detail_not_found() {
-    local response=$(http_get "/api/v1/projects/non-existent-project-12345" false)
+    local response=$(http_get "/api/v1/projects/non-existent-project-12345" true)
     assert_status "$response" "404" "不存在的项目应返回404"
     assert_json_field "$response" "success" "false" "响应success应为false"
     assert_field_exists "$response" "error.code" "响应应包含error.code字段"
@@ -81,7 +103,7 @@ test_get_project_queues() {
         return 0
     fi
     
-    local response=$(http_get "/api/v1/projects/$project_id/queues" false)
+    local response=$(http_get "/api/v1/projects/$project_id/queues" true)
     assert_status "$response" "200" "获取任务队列列表应返回200"
     assert_json_field "$response" "success" "true" "响应success应为true"
     assert_field_exists "$response" "data.items" "响应应包含data.items字段"
@@ -116,7 +138,7 @@ test_get_project_queues_with_search() {
     fi
     
     # 先获取所有队列，然后使用第一个队列的名称进行搜索
-    local all_queues_response=$(http_get "/api/v1/projects/$project_id/queues" false)
+    local all_queues_response=$(http_get "/api/v1/projects/$project_id/queues" true)
     local first_queue_name=$(echo "$all_queues_response" | jq -r '.data.items[0].name // empty')
     
     if [ -z "$first_queue_name" ]; then
@@ -127,7 +149,7 @@ test_get_project_queues_with_search() {
     # 使用队列名称的一部分进行搜索
     local search_keyword=$(echo "$first_queue_name" | cut -c1-3)
     local encoded_keyword=$(printf '%s' "$search_keyword" | jq -sRr @uri)
-    local response=$(http_get "/api/v1/projects/$project_id/queues?search=$encoded_keyword" false)
+    local response=$(http_get "/api/v1/projects/$project_id/queues?search=$encoded_keyword" true)
     
     assert_status "$response" "200" "带搜索参数获取队列列表应返回200"
     assert_json_field "$response" "success" "true" "响应success应为true"
@@ -136,7 +158,7 @@ test_get_project_queues_with_search() {
 
 # 测试函数：获取任务队列列表（不存在的项目ID）
 test_get_project_queues_not_found() {
-    local response=$(http_get "/api/v1/projects/non-existent-project-12345/queues" false)
+    local response=$(http_get "/api/v1/projects/non-existent-project-12345/queues" true)
     assert_status "$response" "404" "不存在的项目的队列列表应返回404"
     assert_json_field "$response" "success" "false" "响应success应为false"
     assert_field_exists "$response" "error.code" "响应应包含error.code字段"
@@ -152,7 +174,7 @@ test_queues_sorting() {
         return 0
     fi
     
-    local response=$(http_get "/api/v1/projects/$project_id/queues" false)
+    local response=$(http_get "/api/v1/projects/$project_id/queues" true)
     assert_status "$response" "200" "获取队列列表应返回200"
     
     local items_count=$(echo "$response" | jq -r '.data.items | length')
@@ -218,6 +240,10 @@ run_module_tests() {
     # 数据一致性测试
     print_section "数据一致性测试"
     run_test "验证项目详情和队列列表的数据一致性" test_data_consistency
+    
+    # displayTitle和metadata测试
+    print_section "displayTitle和metadata测试"
+    run_test "验证displayTitle和metadata字段存在" test_get_project_detail
     
     print_test_summary
     return $?

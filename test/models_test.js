@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
  * 数据库模型单元测试
- * 测试 Project、Queue、ApiKey 模型的基本功能
+ * 测试 Project、Queue、ApiKey、ProjectMetadata 模型的基本功能
  */
 
 import mongoose from 'mongoose';
 import connectDB from '../src/lib/mongoose.js';
-import { Project, Queue, ApiKey } from '../src/lib/models/index.js';
+import { Project, Queue, ApiKey, ProjectMetadata } from '../src/lib/models/index.js';
 
 // 测试配置
 const TEST_DB_NAME = 'taskecho_test';
@@ -42,6 +42,7 @@ async function cleanup() {
     await Project.deleteMany({});
     await Queue.deleteMany({});
     await ApiKey.deleteMany({});
+    await ProjectMetadata.deleteMany({});
   } catch (error) {
     // 如果是认证错误，给出友好提示
     if (error.code === 13 || error.codeName === 'Unauthorized') {
@@ -332,6 +333,127 @@ async function testApiKeyModel() {
   }
 }
 
+// 测试 ProjectMetadata 模型
+async function testProjectMetadataModel() {
+  console.log('\n--- 测试 ProjectMetadata 模型 ---');
+  
+  try {
+    // 先创建一个项目（用于关联）
+    const project = await Project.create({
+      projectId: 'test-project-metadata-001',
+      name: '测试项目元数据'
+    });
+    
+    // 测试创建元数据
+    const metadata = await ProjectMetadata.create({
+      projectId: 'test-project-metadata-001',
+      customTitle: '我的自定义标题',
+      notes: '这是项目的备注信息',
+      tags: ['前端', 'React', '重要']
+    });
+    assert(metadata.projectId === 'test-project-metadata-001', '项目ID不正确');
+    assert(metadata.customTitle === '我的自定义标题', '自定义标题不正确');
+    assert(metadata.notes === '这是项目的备注信息', '备注信息不正确');
+    assert(metadata.tags.length === 3, '标签数量不正确');
+    assert(metadata.createdAt, '创建时间不存在');
+    printTest('创建元数据', true);
+    
+    // 测试标签自动处理（去重、转小写）
+    const metadata2 = await ProjectMetadata.create({
+      projectId: 'test-project-metadata-002',
+      tags: ['前端', 'Frontend', '前端', 'REACT']  // 重复和大小写混合
+    });
+    // 验证标签已去重并转小写
+    const uniqueTags = [...new Set(metadata2.tags.map(t => t.toLowerCase()))];
+    assert(metadata2.tags.length === uniqueTags.length, '标签未正确去重');
+    assert(metadata2.tags.every(t => t === t.toLowerCase()), '标签未转换为小写');
+    printTest('标签自动处理（去重、转小写）', true);
+    
+    // 测试查询元数据
+    const foundMetadata = await ProjectMetadata.findOne({ projectId: 'test-project-metadata-001' });
+    assert(foundMetadata !== null, '查询元数据失败');
+    assert(foundMetadata.customTitle === '我的自定义标题', '查询的自定义标题不正确');
+    assert(foundMetadata.tags.length === 3, '查询的标签数量不正确');
+    printTest('查询元数据', true);
+    
+    // 测试更新元数据
+    await ProjectMetadata.findOneAndUpdate(
+      { projectId: 'test-project-metadata-001' },
+      { 
+        customTitle: '更新后的标题',
+        notes: '更新后的备注',
+        tags: ['后端', 'Node.js']
+      }
+    );
+    const updatedMetadata = await ProjectMetadata.findOne({ projectId: 'test-project-metadata-001' });
+    assert(updatedMetadata.customTitle === '更新后的标题', '更新元数据失败');
+    assert(updatedMetadata.notes === '更新后的备注', '更新备注失败');
+    assert(updatedMetadata.tags.length === 2, '更新标签失败');
+    printTest('更新元数据', true);
+    
+    // 测试唯一性约束（projectId）
+    try {
+      await ProjectMetadata.create({
+        projectId: 'test-project-metadata-001',  // 重复的 projectId
+        customTitle: '另一个标题'
+      });
+      printTest('projectId 唯一性约束', false, '应该抛出重复键错误');
+    } catch (error) {
+      if (error.code === 11000) {
+        printTest('projectId 唯一性约束', true);
+      } else {
+        throw error;
+      }
+    }
+    
+    // 测试标签数量限制（最多20个）
+    try {
+      const manyTags = Array.from({ length: 21 }, (_, i) => `tag${i}`);
+      await ProjectMetadata.create({
+        projectId: 'test-project-metadata-003',
+        tags: manyTags
+      });
+      printTest('标签数量限制', false, '应该抛出验证错误');
+    } catch (error) {
+      if (error.message && error.message.includes('标签数量不能超过 20 个')) {
+        printTest('标签数量限制', true);
+      } else {
+        throw error;
+      }
+    }
+    
+    // 测试按标签查询（使用索引）
+    const projectsWithTag = await ProjectMetadata.find({ tags: '前端' });
+    assert(projectsWithTag.length > 0, '按标签查询失败');
+    printTest('按标签查询', true);
+    
+    // 测试文本搜索（customTitle 和 notes）
+    const searchResults = await ProjectMetadata.find({
+      $text: { $search: '自定义' }
+    });
+    assert(searchResults.length > 0, '文本搜索失败');
+    printTest('文本搜索（customTitle 和 notes）', true);
+    
+    // 测试删除元数据
+    await ProjectMetadata.deleteOne({ projectId: 'test-project-metadata-001' });
+    const deletedMetadata = await ProjectMetadata.findOne({ projectId: 'test-project-metadata-001' });
+    assert(deletedMetadata === null, '删除元数据失败');
+    printTest('删除元数据', true);
+    
+    // 清理
+    await ProjectMetadata.deleteMany({ projectId: { $in: ['test-project-metadata-002', 'test-project-metadata-003'] } });
+    await Project.deleteOne({ _id: project._id });
+    
+  } catch (error) {
+    if (error.code === 13 || error.codeName === 'Unauthorized') {
+      printTest('ProjectMetadata 模型测试', false, 'MongoDB 需要认证，请配置正确的 MONGODB_URI');
+    } else {
+      printTest('ProjectMetadata 模型测试', false, error.message);
+      console.error(error);
+    }
+  }
+}
+
 // 主测试函数
 async function runTests() {
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -359,6 +481,7 @@ async function runTests() {
   await testProjectModel();
   await testQueueModel();
   await testApiKeyModel();
+  await testProjectMetadataModel();
   
   // 最终清理
   await cleanup();

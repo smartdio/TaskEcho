@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
-import { cn } from '@/lib/utils'
+import { cn, highlightKeyword } from '@/lib/utils'
 import { FolderKanban, User, Monitor, FolderOpen } from 'lucide-react'
 
 /**
@@ -50,20 +50,42 @@ function formatDateTime(dateString) {
  * 项目卡片组件
  * @param {Object} props
  * @param {Object} props.project - 项目数据
+ * @param {string} props.searchKeyword - 搜索关键词，用于高亮显示
+ * @param {Function} props.onTagClick - 标签点击回调函数
  */
-export function ProjectCard({ project }) {
+export function ProjectCard({ project, searchKeyword = '', onTagClick }) {
   const { 
     project_id, 
-    name, 
+    name,
+    displayTitle,
+    metadata,
     queue_count = 0, 
     task_count = 0, 
     task_stats = {}, 
     last_task_at,
     clientInfo = {}
   } = project || {}
+  
+  // 使用 displayTitle，如果没有则使用 name
+  const title = displayTitle || name || '未命名项目'
+  
+  // 获取标签列表
+  const tags = metadata?.tags || []
 
   // 对项目ID进行URL编码，因为项目ID可能包含路径等特殊字符
   const encodedProjectId = encodeURIComponent(project_id || '')
+
+  // 高亮标题中的搜索关键词
+  const titleParts = highlightKeyword(title, searchKeyword)
+
+  // 处理标签点击
+  const handleTagClick = (e, tag) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (onTagClick) {
+      onTagClick(tag)
+    }
+  }
 
   const { username, hostname, project_path } = clientInfo || {}
 
@@ -75,7 +97,20 @@ export function ProjectCard({ project }) {
           <div className="flex items-start justify-between mb-3 md:mb-4">
             <h3 className="text-lg md:text-xl lg:text-2xl font-semibold text-gray-900 dark:text-gray-50 flex-1 pr-2 flex items-center gap-2 md:gap-3">
               <FolderKanban className="h-5 w-5 md:h-6 md:w-6 lg:h-7 lg:w-7 text-blue-600 dark:text-blue-400 shrink-0" aria-hidden="true" />
-              <span className="truncate">{name || '未命名项目'}</span>
+              <span className="truncate">
+                {titleParts.map((part, index) => 
+                  part.type === 'highlight' ? (
+                    <mark 
+                      key={index}
+                      className="bg-yellow-200 dark:bg-yellow-800/50 text-gray-900 dark:text-gray-50 px-0.5 rounded"
+                    >
+                      {part.content}
+                    </mark>
+                  ) : (
+                    <span key={index}>{part.content}</span>
+                  )
+                )}
+              </span>
             </h3>
             <p className="text-xs md:text-sm text-gray-500 dark:text-gray-400 shrink-0 whitespace-nowrap">
               {formatDateTime(last_task_at)}
@@ -137,6 +172,40 @@ export function ProjectCard({ project }) {
               </span>
             </div>
           </div>
+
+          {/* 标签显示 */}
+          {tags.length > 0 && (
+            <div className="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-gray-200 dark:border-gray-700">
+              <div className="flex flex-wrap gap-1.5 md:gap-2">
+                {tags.slice(0, 5).map((tag, index) => (
+                  <button
+                    key={index}
+                    type="button"
+                    onClick={(e) => handleTagClick(e, tag)}
+                    className={cn(
+                      'inline-flex items-center px-2 py-0.5 md:px-2.5 md:py-1',
+                      'rounded-md text-xs md:text-sm',
+                      'bg-blue-100 dark:bg-blue-900/30',
+                      'text-blue-800 dark:text-blue-200',
+                      'border border-blue-200 dark:border-blue-800',
+                      'hover:bg-blue-200 dark:hover:bg-blue-900/50',
+                      'active:opacity-80',
+                      'transition-colors duration-200',
+                      'cursor-pointer'
+                    )}
+                    aria-label={`按标签 ${tag} 过滤`}
+                  >
+                    {tag}
+                  </button>
+                ))}
+                {tags.length > 5 && (
+                  <span className="inline-flex items-center px-2 py-0.5 md:px-2.5 md:py-1 rounded-md text-xs md:text-sm text-gray-600 dark:text-gray-400">
+                    +{tags.length - 5}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </Link>

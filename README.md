@@ -91,9 +91,11 @@ python3 -c "import secrets; print(secrets.token_hex(32))"
 ```
 
 **重要提示**：
-- ⚠️ **生产环境必须设置 `ENCRYPTION_KEY`**，否则每次重启应用都会生成新的随机密钥，导致无法解密已存储的 API Key
-- 🔒 请妥善保管 `ENCRYPTION_KEY`，丢失后无法恢复已加密的 API Key
+- ⚠️ **生产环境必须设置 `ENCRYPTION_KEY`**，否则应用无法启动
+- ⚠️ **生产环境必须设置 `JWT_SECRET`**，否则应用无法启动
+- 🔒 请妥善保管 `ENCRYPTION_KEY` 和 `JWT_SECRET`，丢失后无法恢复
 - 🔄 如果更换 `ENCRYPTION_KEY`，所有已存储的 API Key 将无法解密，需要重新创建
+- 📝 详细的生产环境部署指南请参考 [doc/deployment.md](./doc/deployment.md)
 
 ### 安装依赖
 
@@ -120,6 +122,11 @@ npm run build
 ```bash
 npm start
 ```
+
+**生产环境部署**：
+- 📖 详细的生产环境部署指南请参考 [doc/deployment.md](./doc/deployment.md)
+- ⚠️ 生产环境必须设置 `MONGODB_URI`、`ENCRYPTION_KEY` 和 `JWT_SECRET` 环境变量
+- 🔒 建议使用 PM2 或 Docker 进行生产环境部署
 
 ## API 接口说明
 

@@ -3,9 +3,22 @@
  */
 import jwt from 'jsonwebtoken';
 
-// JWT 密钥（从环境变量获取，如果没有则使用默认值）
-const JWT_SECRET = process.env.JWT_SECRET || 'taskecho-secret-key-change-in-production';
+// JWT 密钥（从环境变量获取，生产环境必须设置）
+const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d'; // 默认7天过期
+
+// 生产环境必须设置 JWT_SECRET
+if (process.env.NODE_ENV === 'production' && !JWT_SECRET) {
+  throw new Error('生产环境必须设置 JWT_SECRET 环境变量');
+}
+
+// 开发环境使用默认值（仅用于开发）
+const DEFAULT_JWT_SECRET = 'taskecho-secret-key-change-in-production';
+const finalJwtSecret = JWT_SECRET || (process.env.NODE_ENV === 'development' ? DEFAULT_JWT_SECRET : null);
+
+if (!finalJwtSecret) {
+  throw new Error('JWT_SECRET 未设置');
+}
 
 /**
  * 生成 JWT Token
@@ -15,7 +28,7 @@ const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d'; // 默认7天过期
  * @returns {string} JWT Token
  */
 export function generateToken(payload) {
-  return jwt.sign(payload, JWT_SECRET, {
+  return jwt.sign(payload, finalJwtSecret, {
     expiresIn: JWT_EXPIRES_IN
   });
 }
@@ -28,7 +41,7 @@ export function generateToken(payload) {
  */
 export function verifyToken(token) {
   try {
-    return jwt.verify(token, JWT_SECRET);
+    return jwt.verify(token, finalJwtSecret);
   } catch (error) {
     if (error.name === 'TokenExpiredError') {
       throw new Error('Token 已过期');

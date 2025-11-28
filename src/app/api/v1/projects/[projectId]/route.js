@@ -12,6 +12,7 @@ import { createSuccessResponse, createErrorResponse, ERROR_CODES } from '@/lib/a
 import { createApiHandler, MiddlewarePresets } from '@/lib/api-middleware';
 import connectDB from '@/lib/mongoose';
 import Project from '@/lib/models/Project';
+import ProjectMetadata from '@/lib/models/ProjectMetadata';
 import Queue from '@/lib/models/Queue';
 
 async function handleGET(request, context) {
@@ -33,6 +34,24 @@ async function handleGET(request, context) {
         { project_id: projectId }
       );
     }
+
+    // 查询项目元数据
+    const metadata = await ProjectMetadata.findOne({ projectId }).lean();
+
+    // 格式化 metadata 对象（如果存在）
+    let metadataData = null;
+    if (metadata) {
+      metadataData = {
+        customTitle: metadata.customTitle || null,
+        notes: metadata.notes || null,
+        tags: metadata.tags || []
+      };
+    }
+
+    // 计算 displayTitle：优先使用 metadata.customTitle，否则使用 name
+    const displayTitle = (metadataData && metadataData.customTitle) 
+      ? metadataData.customTitle 
+      : project.name;
 
     // 统计任务队列数量
     const queueCount = await Queue.countDocuments({ projectId: project._id });
@@ -71,7 +90,10 @@ async function handleGET(request, context) {
       id: project._id.toString(),
       project_id: project.projectId,
       name: project.name,
+      displayTitle: displayTitle,
+      metadata: metadataData,
       clientInfo: project.clientInfo || null,
+      gitInfo: project.gitInfo || null,
       queue_count: queueCount,
       task_count: taskCount,
       task_stats: {

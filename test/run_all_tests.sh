@@ -57,10 +57,13 @@ TEST_MODULES=(
     "client_test.sh:客户端实现模块"
     "incremental_update_test.sh:增量更新模块"
     "homepage_test.sh:首页接口模块"
+    "tags_test.sh:标签接口模块"
+    "project_card_display_test.sh:项目卡片显示功能模块"
     "project_detail_test.sh:项目详情页接口模块"
     "queue_detail_test.sh:任务队列详情页接口模块"
     "task_detail_test.sh:任务详情页接口模块"
     "realtime_update_test.sh:实时更新机制模块"
+    "performance_test.sh:性能测试模块"
     # "query_test.sh:数据查询模块"
 )
 

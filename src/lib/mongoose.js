@@ -1,10 +1,17 @@
 import mongoose from 'mongoose';
+import { validateEnv } from './env-validator.js';
+
+// 在首次导入时验证环境变量（仅生产环境）
+if (process.env.NODE_ENV === 'production') {
+  try {
+    validateEnv();
+  } catch (error) {
+    // 验证失败时，mongoose.js 的导入会失败，阻止应用启动
+    throw error;
+  }
+}
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/taskecho';
-
-if (!MONGODB_URI) {
-  throw new Error('请在环境变量中设置 MONGODB_URI');
-}
 
 /**
  * 全局缓存 Mongoose 连接，避免在开发模式下重复连接
