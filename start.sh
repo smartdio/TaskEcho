@@ -76,38 +76,54 @@ fi
 if [ "$STOP" = true ]; then
   echo "正在停止端口 $PORT 上的服务..."
   
-  # 查找占用端口的进程（优先使用 lsof，如果不可用则使用 fuser）
-  PID=""
-  if command -v lsof &> /dev/null; then
-    PID=$(lsof -ti:$PORT 2>/dev/null)
-  elif command -v fuser &> /dev/null; then
-    PID=$(fuser $PORT/tcp 2>/dev/null | awk '{print $1}')
+  # 检查端口是否被占用（优先使用 fuser）
+  PORT_IN_USE=false
+  if command -v fuser &> /dev/null; then
+    if fuser $PORT/tcp >/dev/null 2>&1; then
+      PORT_IN_USE=true
+    fi
+  elif command -v lsof &> /dev/null; then
+    if lsof -ti:$PORT >/dev/null 2>&1; then
+      PORT_IN_USE=true
+    fi
   fi
   
-  if [ -z "$PID" ]; then
+  if [ "$PORT_IN_USE" != true ]; then
     echo "端口 $PORT 上没有运行的服务"
     exit 0
   fi
   
-  # 停止进程
-  echo "找到进程 PID: $PID"
-  if command -v lsof &> /dev/null; then
-    kill -9 $PID 2>/dev/null
-  elif command -v fuser &> /dev/null; then
+  # 停止进程（优先使用 fuser -k，可以一步完成查找和终止）
+  if command -v fuser &> /dev/null; then
+    echo "使用 fuser 停止端口 $PORT 上的进程..."
     fuser -k $PORT/tcp 2>/dev/null
+    RESULT=$?
+  elif command -v lsof &> /dev/null; then
+    echo "使用 lsof 停止端口 $PORT 上的进程..."
+    PID=$(lsof -ti:$PORT 2>/dev/null)
+    if [ -n "$PID" ]; then
+      echo "找到进程 PID: $PID"
+      kill -9 $PID 2>/dev/null
+      RESULT=$?
+    else
+      RESULT=1
+    fi
+  else
+    echo "错误: 未找到 fuser 或 lsof 命令，无法停止服务"
+    exit 1
   fi
   
   # 等待进程结束
   sleep 1
   
-  # 验证是否已停止
+  # 验证是否已停止（优先使用 fuser）
   STILL_RUNNING=false
-  if command -v lsof &> /dev/null; then
-    if lsof -ti:$PORT >/dev/null 2>&1; then
+  if command -v fuser &> /dev/null; then
+    if fuser $PORT/tcp >/dev/null 2>&1; then
       STILL_RUNNING=true
     fi
-  elif command -v fuser &> /dev/null; then
-    if fuser $PORT/tcp >/dev/null 2>&1; then
+  elif command -v lsof &> /dev/null; then
+    if lsof -ti:$PORT >/dev/null 2>&1; then
       STILL_RUNNING=true
     fi
   fi
@@ -140,14 +156,14 @@ if ! command -v npm &> /dev/null; then
   exit 1
 fi
 
-# 检查端口是否被占用
+# 检查端口是否被占用（优先使用 fuser）
 PORT_IN_USE=false
-if command -v lsof &> /dev/null; then
-  if lsof -ti:$PORT >/dev/null 2>&1; then
+if command -v fuser &> /dev/null; then
+  if fuser $PORT/tcp >/dev/null 2>&1; then
     PORT_IN_USE=true
   fi
-elif command -v fuser &> /dev/null; then
-  if fuser $PORT/tcp >/dev/null 2>&1; then
+elif command -v lsof &> /dev/null; then
+  if lsof -ti:$PORT >/dev/null 2>&1; then
     PORT_IN_USE=true
   fi
 fi
