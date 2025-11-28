@@ -15,7 +15,7 @@ async function handleGET(request, context) {
     // 解析查询参数
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1', 10);
-    const pageSize = Math.min(parseInt(searchParams.get('pageSize') || '20', 10), 100);
+    const pageSize = Math.min(parseInt(searchParams.get('pageSize') || '100', 10), 100);
     const search = searchParams.get('search')?.trim() || null;
     const tagsParam = searchParams.get('tags')?.trim() || null;
 

@@ -2,7 +2,7 @@
  * GET /api/v1/projects/:projectId/queues
  * 获取项目下的任务队列列表
  */
-import { createSuccessResponse, createErrorResponse, ERROR_CODES } from '@/lib/api-response';
+import { createSuccessResponse, createErrorResponse, createPaginatedResponse, ERROR_CODES } from '@/lib/api-response';
 import { createApiHandler, MiddlewarePresets } from '@/lib/api-middleware';
 import connectDB from '@/lib/mongoose';
 import Project from '@/lib/models/Project';
@@ -17,6 +17,17 @@ async function handleGET(request, context) {
     const { projectId } = context.params;
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search')?.trim();
+    const page = parseInt(searchParams.get('page') || '1', 10);
+    const pageSize = Math.min(parseInt(searchParams.get('pageSize') || '100', 10), 100);
+
+    // 验证参数
+    if (page < 1 || pageSize < 1) {
+      return createErrorResponse(
+        '页码和每页数量必须大于 0',
+        ERROR_CODES.VALIDATION_ERROR,
+        400
+      );
+    }
 
     // 查询项目
     const project = await Project.findOne({ projectId }).lean();
@@ -40,6 +51,9 @@ async function handleGET(request, context) {
       query.name = { $regex: search, $options: 'i' };
     }
 
+    // 查询任务队列总数（用于分页）
+    const total = await Queue.countDocuments(query);
+
     // 查询任务队列列表（列表查询，排除 messages 和 logs）
     const queues = await Queue.find(query)
       .select({
@@ -47,6 +61,8 @@ async function handleGET(request, context) {
         'tasks.logs': 0      // 排除 logs
       })
       .sort({ lastTaskAt: -1, createdAt: -1 })
+      .skip((page - 1) * pageSize)
+      .limit(pageSize)
       .lean();
 
     // 对每个队列统计任务数据（从队列的 tasks 数组中统计）
@@ -89,8 +105,18 @@ async function handleGET(request, context) {
       };
     });
 
-    return createSuccessResponse(
-      { items: queuesWithStats },
+    // 计算总页数
+    const totalPages = Math.ceil(total / pageSize);
+
+    // 返回分页响应
+    return createPaginatedResponse(
+      queuesWithStats,
+      {
+        page,
+        pageSize,
+        total,
+        totalPages
+      },
       '查询成功'
     );
 

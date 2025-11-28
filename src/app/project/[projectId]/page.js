@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Breadcrumb from '@/components/layout/Breadcrumb'
 import { SearchSection } from '@/components/project/SearchSection'
 import { ProjectStatsSection } from '@/components/project/ProjectStatsSection'
 import { QueueList } from '@/components/project/QueueList'
+import { Pagination } from '@/components/home/Pagination'
 import { Button } from '@/components/ui/button'
 import { RefreshCw, AlertCircle, MoreVertical, Edit, Trash2, FolderKanban, User, Folder, GitBranch, Link as LinkIcon, Tag } from 'lucide-react'
 import { useToast as useShadcnToast } from '@/components/ui/use-toast'
@@ -47,23 +48,13 @@ import { TagInput } from '@/components/project/TagInput'
 const POLLING_INTERVAL = 30000 // 30秒轮询间隔
 
 /**
- * 搜索过滤函数
- */
-function filterQueues(queues, keyword) {
-  if (!keyword.trim()) {
-    return queues
-  }
-  
-  const lowerKeyword = keyword.toLowerCase()
-  return queues.filter(queue => 
-    queue.name.toLowerCase().includes(lowerKeyword)
-  )
-}
-
-/**
  * 获取项目详情页数据（合并项目信息、队列列表和统计数据）
+ * @param {string} projectId - 项目ID
+ * @param {number} page - 页码
+ * @param {number} pageSize - 每页数量
+ * @param {string} search - 搜索关键词（可选）
  */
-async function fetchProjectDetailData(projectId) {
+async function fetchProjectDetailData(projectId, page = 1, pageSize = 100, search = null) {
   const { fetchWithAuth } = await import('@/lib/fetch-utils')
   // 对项目ID进行URL编码，因为项目ID可能包含特殊字符（如路径）
   const encodedProjectId = encodeURIComponent(projectId)
@@ -75,9 +66,18 @@ async function fetchProjectDetailData(projectId) {
   const startDate = sevenDaysAgo.toISOString().split('T')[0]
   const endDate = today.toISOString().split('T')[0]
   
+  // 构建队列列表API的查询参数
+  const queueParams = new URLSearchParams({
+    page: page.toString(),
+    pageSize: pageSize.toString()
+  })
+  if (search && search.trim()) {
+    queueParams.append('search', search.trim())
+  }
+  
   const [projectResponse, queuesResponse, statsResponse] = await Promise.all([
     fetchWithAuth(`/api/v1/projects/${encodedProjectId}`),
-    fetchWithAuth(`/api/v1/projects/${encodedProjectId}/queues`),
+    fetchWithAuth(`/api/v1/projects/${encodedProjectId}/queues?${queueParams.toString()}`),
     fetchWithAuth(`/api/v1/stats/project/${encodedProjectId}?startDate=${startDate}&endDate=${endDate}`).catch(() => null)
   ])
 
@@ -109,6 +109,12 @@ async function fetchProjectDetailData(projectId) {
   return {
     project: projectData.data,
     queues: queuesData.data.items || [],
+    pagination: queuesData.data.pagination || {
+      page: 1,
+      pageSize: 100,
+      total: 0,
+      totalPages: 1
+    },
     trendData: statsData.success ? (statsData.data.daily_stats || []) : []
   }
 }
@@ -122,6 +128,8 @@ export default function ProjectDetailPage() {
   const { toast } = useShadcnToast()
 
   const [searchKeyword, setSearchKeyword] = useState('')
+  const [page, setPage] = useState(1)
+  const [pageSize] = useState(100)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [editName, setEditName] = useState('')
@@ -139,8 +147,8 @@ export default function ProjectDetailPage() {
   // 创建获取数据的函数
   const fetchData = useCallback(() => {
     if (!projectId) return Promise.resolve(null)
-    return fetchProjectDetailData(projectId)
-  }, [projectId])
+    return fetchProjectDetailData(projectId, page, pageSize, searchKeyword)
+  }, [projectId, page, pageSize, searchKeyword])
 
   // 使用页面可见性感知轮询（已禁用自动刷新，仅保留首次加载和手动刷新）
   const {
@@ -180,9 +188,47 @@ export default function ProjectDetailPage() {
     }
   )
 
+  // 跟踪是否是首次加载，避免首次加载时重复请求
+  const isFirstLoadRef = useRef(true)
+
+  // 当搜索或页码改变时，自动重新请求API
+  useEffect(() => {
+    // 跳过首次加载（首次加载由 useVisibilityAwarePolling 自动处理）
+    if (isFirstLoadRef.current) {
+      isFirstLoadRef.current = false
+      return
+    }
+
+    // 只有在有 projectId 时才请求
+    if (projectId) {
+      refetch()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchKeyword, page])
+
+  // 页码改变处理
+  const handlePageChange = useCallback((newPage) => {
+    setPage(newPage)
+    // 滚动到顶部
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [])
+
+  // 搜索关键词改变处理（切换搜索时重置到第一页）
+  const handleSearchChange = useCallback((newSearch) => {
+    setSearchKeyword(newSearch)
+    setPage(1) // 重置到第一页
+  }, [])
+
   // 提取数据
   const project = data?.project || null
   const trendData = data?.trendData || []
+  const queues = data?.queues || []
+  const pagination = data?.pagination || {
+    page: 1,
+    pageSize: 100,
+    total: 0,
+    totalPages: 1
+  }
   
   // 获取显示标题：优先使用 displayTitle，否则使用 name
   const displayTitle = project?.displayTitle || project?.name || '项目详情'
@@ -431,11 +477,6 @@ export default function ProjectDetailPage() {
     }
   }, [projectId, toast, router])
 
-  // 过滤后的队列列表
-  const filteredQueues = useMemo(() => {
-    const queues = data?.queues || []
-    return filterQueues(queues, searchKeyword)
-  }, [data?.queues, searchKeyword])
 
   // 项目不存在错误
   if (error && error.message && error.message.includes('项目不存在')) {
@@ -678,20 +719,20 @@ export default function ProjectDetailPage() {
           {!isInitialLoading && !error && (
             <SearchSection
               value={searchKeyword}
-              onChange={setSearchKeyword}
+              onChange={handleSearchChange}
               placeholder="输入队列名称进行搜索..."
             />
           )}
 
-          {/* 任务队列列表 */}
-          {!isInitialLoading && !error && filteredQueues.length === 0 && searchKeyword && (
+          {/* 搜索无结果 */}
+          {!isInitialLoading && !error && queues.length === 0 && searchKeyword && (
             <div className="text-center py-12 md:py-16 lg:py-20">
               <p className="text-base md:text-lg lg:text-xl text-gray-600 dark:text-gray-400">
                 未找到匹配的任务队列
               </p>
               <Button
                 variant="outline"
-                onClick={() => setSearchKeyword('')}
+                onClick={() => handleSearchChange('')}
                 className="mt-4"
               >
                 清除搜索
@@ -701,10 +742,19 @@ export default function ProjectDetailPage() {
 
           {/* 队列列表 */}
           <QueueList
-            queues={filteredQueues}
+            queues={queues}
             projectId={projectId}
             loading={isInitialLoading}
           />
+
+          {/* 分页控件 */}
+          {!isInitialLoading && !error && queues.length > 0 && pagination.totalPages > 1 && (
+            <Pagination
+              page={pagination.page}
+              totalPages={pagination.totalPages}
+              onPageChange={handlePageChange}
+            />
+          )}
 
           {/* 编辑项目对话框 */}
           <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { StatsSection } from '@/components/home/StatsSection'
 import { ProjectList } from '@/components/home/ProjectList'
 import { Pagination } from '@/components/home/Pagination'
@@ -21,7 +21,7 @@ const EMPTY_DATA_INTERVAL = 300000 // 5分钟（当没有数据时的轮询间�
 /**
  * 获取首页数据（合并项目列表、统计和7日趋势）
  */
-async function fetchHomePageData(page = 1, pageSize = 20, search = '', tags = []) {
+async function fetchHomePageData(page = 1, pageSize = 100, search = '', tags = []) {
   // 计算7天前的日期
   const today = new Date()
   const sevenDaysAgo = new Date(today)
@@ -75,7 +75,7 @@ async function fetchHomePageData(page = 1, pageSize = 20, search = '', tags = []
 
 export default function HomePage() {
   const [page, setPage] = useState(1)
-  const [pageSize] = useState(20)
+  const [pageSize] = useState(100)
   const [search, setSearch] = useState('')
   const [selectedTags, setSelectedTags] = useState([])
   const { toast } = useShadcnToast()
@@ -114,6 +114,22 @@ export default function HomePage() {
     }
   )
 
+  // 跟踪是否是首次加载，避免首次加载时重复请求
+  const isFirstLoadRef = useRef(true)
+
+  // 当搜索、标签或页码改变时，自动重新请求API
+  useEffect(() => {
+    // 跳过首次加载（首次加载由 useVisibilityAwarePolling 自动处理）
+    if (isFirstLoadRef.current) {
+      isFirstLoadRef.current = false
+      return
+    }
+
+    // 自动重新请求
+    refetch()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, selectedTags, page])
+
   // 页码改变
   const handlePageChange = useCallback((newPage) => {
     setPage(newPage)
@@ -151,7 +167,7 @@ export default function HomePage() {
   const projects = data?.projects?.items || []
   const pagination = data?.projects?.pagination || {
     page: 1,
-    pageSize: 20,
+    pageSize: 100,
     total: 0,
     totalPages: 0
   }

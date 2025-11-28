@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Breadcrumb from '@/components/layout/Breadcrumb'
 import { StatusFilter } from '@/components/queue/StatusFilter'
 import { TaskList } from '@/components/queue/TaskList'
+import { Pagination } from '@/components/home/Pagination'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -33,30 +34,32 @@ import {
 const POLLING_INTERVAL = 30000 // 30秒轮询间隔
 
 /**
- * 状态过滤函数
- */
-function filterByStatus(tasks, selectedStatus) {
-  if (selectedStatus === 'all') {
-    return tasks
-  }
-  
-  return tasks.filter(task => 
-    (task.status || 'pending').toLowerCase() === selectedStatus.toLowerCase()
-  )
-}
-
-/**
  * 获取任务队列详情页数据（合并项目、队列和任务列表）
+ * @param {string} projectId - 项目ID
+ * @param {string} queueId - 队列ID
+ * @param {number} page - 页码
+ * @param {number} pageSize - 每页数量
+ * @param {string} status - 状态过滤（可选）
  */
-async function fetchQueueDetailData(projectId, queueId) {
+async function fetchQueueDetailData(projectId, queueId, page = 1, pageSize = 100, status = null) {
   const { fetchWithAuth } = await import('@/lib/fetch-utils')
   // 对项目ID和队列ID进行URL编码，因为ID可能包含特殊字符
   const encodedProjectId = encodeURIComponent(projectId)
   const encodedQueueId = encodeURIComponent(queueId)
+  
+  // 构建任务列表API的查询参数
+  const taskParams = new URLSearchParams({
+    page: page.toString(),
+    pageSize: pageSize.toString()
+  })
+  if (status && status !== 'all') {
+    taskParams.append('status', status)
+  }
+  
   const [projectResponse, queueResponse, tasksResponse] = await Promise.all([
     fetchWithAuth(`/api/v1/projects/${encodedProjectId}`),
     fetchWithAuth(`/api/v1/projects/${encodedProjectId}/queues/${encodedQueueId}`),
-    fetchWithAuth(`/api/v1/projects/${encodedProjectId}/queues/${encodedQueueId}/tasks`)
+    fetchWithAuth(`/api/v1/projects/${encodedProjectId}/queues/${encodedQueueId}/tasks?${taskParams.toString()}`)
   ])
 
   if (!projectResponse.ok) {
@@ -98,7 +101,13 @@ async function fetchQueueDetailData(projectId, queueId) {
   return {
     project: projectData.data,
     queue: queueData.data,
-    tasks: tasksData.data.items || []
+    tasks: tasksData.data.items || [],
+    pagination: tasksData.data.pagination || {
+      page: 1,
+      pageSize: 100,
+      total: 0,
+      totalPages: 1
+    }
   }
 }
 
@@ -113,14 +122,16 @@ export default function QueueDetailPage() {
   const { toast } = useShadcnToast()
 
   const [selectedStatus, setSelectedStatus] = useState('all')
+  const [page, setPage] = useState(1)
+  const [pageSize] = useState(100)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
 
   // 创建获取数据的函数
   const fetchData = useCallback(() => {
     if (!projectId || !queueId) return Promise.resolve(null)
-    return fetchQueueDetailData(projectId, queueId)
-  }, [projectId, queueId])
+    return fetchQueueDetailData(projectId, queueId, page, pageSize, selectedStatus)
+  }, [projectId, queueId, page, pageSize, selectedStatus])
 
   // 使用页面可见性感知轮询（已禁用自动刷新，仅保留首次加载和手动刷新）
   const {
@@ -138,6 +149,24 @@ export default function QueueDetailPage() {
       })
     }
   })
+
+  // 跟踪是否是首次加载，避免首次加载时重复请求
+  const isFirstLoadRef = useRef(true)
+
+  // 当状态或页码改变时，自动重新请求API
+  useEffect(() => {
+    // 跳过首次加载（首次加载由 useVisibilityAwarePolling 自动处理）
+    if (isFirstLoadRef.current) {
+      isFirstLoadRef.current = false
+      return
+    }
+
+    // 只有在有 projectId 和 queueId 时才请求
+    if (projectId && queueId) {
+      refetch()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStatus, page])
 
   // 下拉刷新
   const { isRefreshing, pullDistance, isPulling } = usePullToRefresh(
@@ -159,14 +188,23 @@ export default function QueueDetailPage() {
     }
   )
 
-  // 状态过滤处理
+  // 状态过滤处理（切换过滤时重置到第一页）
   const handleStatusChange = useCallback((status) => {
     setSelectedStatus(status)
+    setPage(1) // 重置到第一页
   }, [])
 
-  // 清除过滤
+  // 清除过滤（重置到第一页）
   const handleClearFilters = useCallback(() => {
     setSelectedStatus('all')
+    setPage(1) // 重置到第一页
+  }, [])
+
+  // 页码改变处理
+  const handlePageChange = useCallback((newPage) => {
+    setPage(newPage)
+    // 滚动到顶部
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }, [])
 
   // 删除队列
@@ -214,11 +252,12 @@ export default function QueueDetailPage() {
   const project = data?.project || null
   const queue = data?.queue || null
   const tasks = data?.tasks || []
-
-  // 过滤后的任务列表
-  const filteredTasks = useMemo(() => {
-    return filterByStatus(tasks, selectedStatus)
-  }, [tasks, selectedStatus])
+  const pagination = data?.pagination || {
+    page: 1,
+    pageSize: 100,
+    total: 0,
+    totalPages: 1
+  }
 
   // 项目或队列不存在错误
   if (error && error.message && (
@@ -370,7 +409,7 @@ export default function QueueDetailPage() {
           )}
 
           {/* 过滤无结果 */}
-          {!isLoading && !error && filteredTasks.length === 0 && selectedStatus !== 'all' && (
+          {!isLoading && !error && tasks.length === 0 && selectedStatus !== 'all' ? (
             <div className="text-center py-12 md:py-16 lg:py-20">
               <p className="text-base md:text-lg lg:text-xl text-gray-600 dark:text-gray-400 mb-4">
                 未找到匹配的任务
@@ -382,15 +421,24 @@ export default function QueueDetailPage() {
                 清除过滤
               </Button>
             </div>
+          ) : (
+            /* 任务列表 */
+            <TaskList
+              tasks={tasks}
+              projectId={projectId}
+              queueId={queueId}
+              loading={isLoading}
+            />
           )}
 
-          {/* 任务列表 */}
-          <TaskList
-            tasks={filteredTasks}
-            projectId={projectId}
-            queueId={queueId}
-            loading={isLoading}
-          />
+          {/* 分页控件 */}
+          {!isLoading && !error && tasks.length > 0 && pagination.totalPages > 1 && (
+            <Pagination
+              page={pagination.page}
+              totalPages={pagination.totalPages}
+              onPageChange={handlePageChange}
+            />
+          )}
 
           {/* 删除确认对话框 */}
           <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
