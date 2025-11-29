@@ -10,12 +10,12 @@ import { Button } from '@/components/ui/button'
 import { RefreshCw, AlertCircle, Filter } from 'lucide-react'
 import { useToast as useShadcnToast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
-import { useVisibilityAwarePolling } from '@/hooks/useVisibilityAwarePolling'
+import { useTimestampCheck } from '@/hooks/useTimestampCheck'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { AuthGuard } from '@/components/auth/AuthGuard'
 import { fetchWithAuth } from '@/lib/fetch-utils'
 
-const POLLING_INTERVAL = 30000 // 30秒轮询间隔
+const POLLING_INTERVAL = 20000 // 20秒轮询间隔
 const EMPTY_DATA_INTERVAL = 300000 // 5分钟（当没有数据时的轮询间隔）
 
 /**
@@ -80,21 +80,29 @@ export default function HomePage() {
   const [selectedTags, setSelectedTags] = useState([])
   const { toast } = useShadcnToast()
 
-  // 创建获取数据的函数
+  // 创建检查函数（轻量级检查API）
+  const checkProjects = useCallback(async () => {
+    const { fetchWithAuth } = await import('@/lib/fetch-utils')
+    const response = await fetchWithAuth('/api/v1/projects/check')
+    if (!response.ok) return null
+    const result = await response.json()
+    return result.success ? result.data : null
+  }, [])
+
+  // 创建获取完整数据的函数
   const fetchData = useCallback(() => {
     return fetchHomePageData(page, pageSize, search, selectedTags)
   }, [page, pageSize, search, selectedTags])
 
-  // 使用页面可见性感知轮询（已禁用自动刷新，仅保留首次加载和手动刷新）
+  // 使用基于时间戳检查的无感更新Hook
   const {
     data,
-    isInitialLoading,
+    isLoading: isInitialLoading,
     isRefreshing,
     error,
     refetch
-  } = useVisibilityAwarePolling(fetchData, POLLING_INTERVAL, {
-    enabled: false, // 禁用自动刷新
-    emptyInterval: EMPTY_DATA_INTERVAL,
+  } = useTimestampCheck(checkProjects, fetchData, POLLING_INTERVAL, {
+    enabled: true, // 启用自动检查
     onError: (err) => {
       toast({
         title: '加载失败',

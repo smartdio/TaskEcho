@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { RefreshCw, AlertCircle, MoreVertical, Edit, Trash2, FolderKanban, User, Folder, GitBranch, Link as LinkIcon, Tag } from 'lucide-react'
 import { useToast as useShadcnToast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
-import { useVisibilityAwarePolling } from '@/hooks/useVisibilityAwarePolling'
+import { useTimestampCheck } from '@/hooks/useTimestampCheck'
 import { usePullToRefresh } from '@/hooks/usePullToRefresh'
 import { useSwipeBack } from '@/hooks/useSwipeBack'
 import { AuthGuard } from '@/components/auth/AuthGuard'
@@ -45,7 +45,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent } from '@/components/ui/card'
 import { TagInput } from '@/components/project/TagInput'
 
-const POLLING_INTERVAL = 30000 // 30秒轮询间隔
+const POLLING_INTERVAL = 20000 // 20秒轮询间隔
 
 /**
  * 获取项目详情页数据（合并项目信息、队列列表和统计数据）
@@ -144,21 +144,32 @@ export default function ProjectDetailPage() {
   const [isLoadingMetadata, setIsLoadingMetadata] = useState(false)
   const [isSavingMetadata, setIsSavingMetadata] = useState(false)
 
-  // 创建获取数据的函数
+  // 创建检查函数（轻量级检查API）
+  const checkQueues = useCallback(async () => {
+    if (!projectId) return null
+    const { fetchWithAuth } = await import('@/lib/fetch-utils')
+    const encodedProjectId = encodeURIComponent(projectId)
+    const response = await fetchWithAuth(`/api/v1/projects/${encodedProjectId}/queues/check`)
+    if (!response.ok) return null
+    const result = await response.json()
+    return result.success ? result.data : null
+  }, [projectId])
+
+  // 创建获取完整数据的函数
   const fetchData = useCallback(() => {
     if (!projectId) return Promise.resolve(null)
     return fetchProjectDetailData(projectId, page, pageSize, searchKeyword)
   }, [projectId, page, pageSize, searchKeyword])
 
-  // 使用页面可见性感知轮询（已禁用自动刷新，仅保留首次加载和手动刷新）
+  // 使用基于时间戳检查的无感更新Hook
   const {
     data,
-    isInitialLoading,
+    isLoading: isInitialLoading,
     isRefreshing,
     error,
     refetch
-  } = useVisibilityAwarePolling(fetchData, POLLING_INTERVAL, {
-    enabled: false, // 禁用自动刷新
+  } = useTimestampCheck(checkQueues, fetchData, POLLING_INTERVAL, {
+    enabled: true, // 启用自动检查
     onError: (err) => {
       toast({
         title: '加载失败',
