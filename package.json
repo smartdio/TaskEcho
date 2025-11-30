@@ -1,12 +1,14 @@
 {
   "name": "taskecho",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/generate-version.js",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "version:generate": "node scripts/generate-version.js"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.15",

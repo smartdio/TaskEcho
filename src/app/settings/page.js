@@ -2,18 +2,19 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Button } from '@/components/ui/button'
-import { Plus, AlertCircle, Loader2, Copy, Check } from 'lucide-react'
+import { Plus, AlertCircle, Loader2, Copy, Check, Info } from 'lucide-react'
 import { useToast } from '@/hooks/useToast'
 import Breadcrumb from '@/components/layout/Breadcrumb'
 import { ApiKeyList } from '@/components/settings/ApiKeyList'
 import { ApiKeyForm } from '@/components/settings/ApiKeyForm'
 import { DeleteConfirmDialog } from '@/components/settings/DeleteConfirmDialog'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { AuthGuard } from '@/components/auth/AuthGuard'
 import { fetchWithAuth } from '@/lib/fetch-utils'
+import { getVersionInfo, formatBuildTime, DEFAULT_VERSION_INFO } from '@/lib/version'
 
 /**
  * 格式化时间显示
@@ -71,6 +72,9 @@ export default function SettingsPage() {
   // 加载状态
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  
+  // 版本信息状态
+  const [versionInfo, setVersionInfo] = useState(null)
   
   // 表单状态
   const [formOpen, setFormOpen] = useState(false)
@@ -428,6 +432,15 @@ export default function SettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newApiKey])
   
+  // 获取版本信息
+  useEffect(() => {
+    getVersionInfo().then(info => {
+      setVersionInfo(info || DEFAULT_VERSION_INFO)
+    }).catch(() => {
+      setVersionInfo(DEFAULT_VERSION_INFO)
+    })
+  }, [])
+  
   // 初始加载（只在组件挂载时执行一次）
   useEffect(() => {
     if (!hasInitializedRef.current) {
@@ -501,6 +514,58 @@ export default function SettingsPage() {
             onViewKey={handleViewKey}
             formatDateTime={formatDateTime}
           />
+        )}
+        
+        {/* 版本信息卡片 */}
+        {versionInfo && (
+          <Card className="mt-6 md:mt-8 border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg md:text-xl flex items-center gap-2">
+                <Info className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+                <span>版本信息</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                <div>
+                  <span className="text-gray-600 dark:text-gray-400">版本号：</span>
+                  <span className="font-mono font-semibold text-gray-900 dark:text-gray-100 ml-2">
+                    {versionInfo.version}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-600 dark:text-gray-400">构建时间：</span>
+                  <span className="text-gray-900 dark:text-gray-100 ml-2">
+                    {formatBuildTime(versionInfo.buildTime)}
+                  </span>
+                </div>
+                {versionInfo.gitCommitShort && (
+                  <div>
+                    <span className="text-gray-600 dark:text-gray-400">Git 提交：</span>
+                    <span className="font-mono text-gray-900 dark:text-gray-100 ml-2">
+                      {versionInfo.gitCommitShort}
+                    </span>
+                  </div>
+                )}
+                {versionInfo.gitBranch && (
+                  <div>
+                    <span className="text-gray-600 dark:text-gray-400">Git 分支：</span>
+                    <span className="text-gray-900 dark:text-gray-100 ml-2">
+                      {versionInfo.gitBranch}
+                    </span>
+                  </div>
+                )}
+                {versionInfo.buildNumber > 0 && (
+                  <div>
+                    <span className="text-gray-600 dark:text-gray-400">构建序号：</span>
+                    <span className="text-gray-900 dark:text-gray-100 ml-2">
+                      {versionInfo.buildNumber}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         )}
         
         {/* 表单弹窗 */}

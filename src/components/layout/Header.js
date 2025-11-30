@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import { Settings, LogOut, BarChart3 } from 'lucide-react'
@@ -7,11 +8,22 @@ import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/theme/ThemeToggle'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
+import { getVersionInfo, formatMajorVersion, DEFAULT_VERSION_INFO } from '@/lib/version'
 
 export default function Header() {
   const router = useRouter()
   const pathname = usePathname()
   const { user, logout } = useAuth()
+  const [versionInfo, setVersionInfo] = useState(null)
+
+  useEffect(() => {
+    // 获取版本信息
+    getVersionInfo().then(info => {
+      setVersionInfo(info || DEFAULT_VERSION_INFO)
+    }).catch(() => {
+      setVersionInfo(DEFAULT_VERSION_INFO)
+    })
+  }, [])
 
   const handleLogout = () => {
     logout()
@@ -19,6 +31,7 @@ export default function Header() {
   }
 
   const isStatsPage = pathname === '/stats'
+  const majorVersion = versionInfo ? formatMajorVersion(versionInfo) : ''
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -28,6 +41,11 @@ export default function Header() {
           <span className="text-lg md:text-xl lg:text-2xl font-bold text-foreground">
             TaskEcho
           </span>
+          {majorVersion && (
+            <span className="text-xs md:text-sm text-gray-600 dark:text-gray-400 font-normal">
+              {majorVersion}
+            </span>
+          )}
         </Link>
 
         {/* 右侧操作按钮 */}
