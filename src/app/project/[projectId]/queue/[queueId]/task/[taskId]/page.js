@@ -6,7 +6,33 @@ import Breadcrumb from '@/components/layout/Breadcrumb'
 import { MessageList } from '@/components/task/MessageList'
 import { ReplyInput } from '@/components/task/ReplyInput'
 import { Button } from '@/components/ui/button'
-import { AlertCircle, ClipboardList, FileText, RefreshCw, Info } from 'lucide-react'
+import { AlertCircle, ClipboardList, FileText, RefreshCw, Info, Edit, Trash2, Move, History } from 'lucide-react'
+import { TaskPullStatus } from '@/components/pull/TaskPullStatus'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Card, CardContent } from '@/components/ui/card'
 import { useToast as useShadcnToast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
 import { useIncrementalUpdate } from '@/hooks/useIncrementalUpdate'
@@ -166,6 +192,15 @@ export default function TaskDetailPage() {
 
   const [localMessages, setLocalMessages] = useState([]) // 本地消息（待发送）
   const messagesEndRef = useRef(null)
+  
+  // 删除/移动相关状态
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [moveDialogOpen, setMoveDialogOpen] = useState(false)
+  const [pullHistoryDialogOpen, setPullHistoryDialogOpen] = useState(false)
+  const [pullHistory, setPullHistory] = useState([])
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [isMoving, setIsMoving] = useState(false)
+  const [isLoadingPullHistory, setIsLoadingPullHistory] = useState(false)
 
   // 创建获取数据的函数
   const fetchData = useCallback(() => {
@@ -245,6 +280,157 @@ export default function TaskDetailPage() {
   }, [router, encodedProjectId, encodedQueueId])
 
   useSwipeBack(handleSwipeBack)
+
+  // 加载拉取历史
+  const loadPullHistory = useCallback(async () => {
+    if (!projectId || !taskId) return
+    
+    setIsLoadingPullHistory(true)
+    try {
+      const { fetchWithAuth } = await import('@/lib/fetch-utils')
+      const encodedProjectId = encodeURIComponent(projectId)
+      const encodedTaskId = encodeURIComponent(taskId)
+      
+      // 如果是队列中的任务，需要从队列API获取
+      if (queueId) {
+        const encodedQueueId = encodeURIComponent(queueId)
+        const response = await fetchWithAuth(`/api/v1/projects/${encodedProjectId}/queues/${encodedQueueId}/tasks/${encodedTaskId}`)
+        if (response.ok) {
+          const result = await response.json()
+          if (result.success && result.data.pull_history) {
+            setPullHistory(result.data.pull_history)
+          }
+        }
+      } else {
+        // 项目级任务
+        const response = await fetchWithAuth(`/api/v1/projects/${encodedProjectId}/tasks/${encodedTaskId}/pull/history`)
+        if (response.ok) {
+          const result = await response.json()
+          if (result.success && result.data.pull_history) {
+            setPullHistory(result.data.pull_history)
+          }
+        }
+      }
+    } catch (error) {
+      console.error('加载拉取历史失败:', error)
+    } finally {
+      setIsLoadingPullHistory(false)
+    }
+  }, [projectId, queueId, taskId])
+
+  // 跳转到编辑任务页面
+  const handleEditTask = useCallback(() => {
+    if (!projectId || !taskId) return
+    if (queueId) {
+      router.push(`/project/${encodeURIComponent(projectId)}/queue/${encodeURIComponent(queueId)}/task/${encodeURIComponent(taskId)}/edit`)
+    } else {
+      router.push(`/project/${encodeURIComponent(projectId)}/task/${encodeURIComponent(taskId)}/edit`)
+    }
+  }, [projectId, queueId, taskId, router])
+
+  // 删除任务
+  const handleDeleteTask = useCallback(async () => {
+    if (!projectId || !taskId) return
+
+    setIsDeleting(true)
+    try {
+      const { fetchWithAuth } = await import('@/lib/fetch-utils')
+      const encodedProjectId = encodeURIComponent(projectId)
+      
+      let response
+      if (queueId) {
+        const encodedQueueId = encodeURIComponent(queueId)
+        const encodedTaskId = encodeURIComponent(taskId)
+        response = await fetchWithAuth(`/api/v1/projects/${encodedProjectId}/queues/${encodedQueueId}/tasks/${encodedTaskId}`, {
+          method: 'DELETE'
+        })
+      } else {
+        const encodedTaskId = encodeURIComponent(taskId)
+        response = await fetchWithAuth(`/api/v1/projects/${encodedProjectId}/tasks/${encodedTaskId}`, {
+          method: 'DELETE'
+        })
+      }
+
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error?.message || '删除任务失败')
+      }
+
+      toast({
+        title: '成功',
+        description: '任务删除成功',
+        variant: 'default'
+      })
+
+      setDeleteDialogOpen(false)
+      // 删除成功后返回
+      if (queueId) {
+        router.push(`/project/${encodedProjectId}/queue/${encodedQueueId}`)
+      } else {
+        router.push(`/project/${encodedProjectId}`)
+      }
+    } catch (error) {
+      toast({
+        title: '删除失败',
+        description: error.message || '请稍后重试',
+        variant: 'destructive'
+      })
+      setIsDeleting(false)
+    }
+  }, [projectId, queueId, taskId, toast, router, encodedProjectId])
+
+  // 移动任务
+  const handleMoveTask = useCallback(async (targetQueueId) => {
+    if (!projectId || !taskId) return
+
+    setIsMoving(true)
+    try {
+      const { fetchWithAuth } = await import('@/lib/fetch-utils')
+      const encodedProjectId = encodeURIComponent(projectId)
+      const encodedTaskId = encodeURIComponent(taskId)
+      
+      const response = await fetchWithAuth(`/api/v1/projects/${encodedProjectId}/tasks/${encodedTaskId}/move`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ queue_id: targetQueueId || null })
+      })
+
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error?.message || '移动任务失败')
+      }
+
+      toast({
+        title: '成功',
+        description: '任务移动成功',
+        variant: 'default'
+      })
+
+      setMoveDialogOpen(false)
+      // 移动成功后返回
+      if (targetQueueId) {
+        const encodedTargetQueueId = encodeURIComponent(targetQueueId)
+        router.push(`/project/${encodedProjectId}/queue/${encodedTargetQueueId}`)
+      } else {
+        router.push(`/project/${encodedProjectId}`)
+      }
+    } catch (error) {
+      toast({
+        title: '移动失败',
+        description: error.message || '请稍后重试',
+        variant: 'destructive'
+      })
+      setIsMoving(false)
+    }
+  }, [projectId, taskId, toast, router, encodedProjectId])
+
+  // 打开拉取历史对话框
+  const handleOpenPullHistory = useCallback(() => {
+    setPullHistoryDialogOpen(true)
+    loadPullHistory()
+  }, [loadPullHistory])
 
   // 提取数据
   const project = data?.project || null
@@ -362,31 +548,70 @@ export default function TaskDetailPage() {
                     <ClipboardList className="h-6 w-6 md:h-7 md:w-7 lg:h-8 lg:w-8 text-blue-600 dark:text-blue-400 shrink-0" aria-hidden="true" />
                     <span className="truncate">{task?.name || '任务详情'}</span>
                   </h1>
-                  {/* 元数据按钮 */}
+                  {/* 任务来源和拉取状态 */}
                   {task && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => router.push(`/project/${encodedProjectId}/queue/${encodedQueueId}/task/${encodedTaskId}/metadata`)}
-                      className="h-9 md:h-10 px-3 md:px-4 shrink-0"
-                      aria-label="查看元数据"
-                    >
-                      <Info className="h-4 w-4 md:h-5 md:w-5 mr-2" />
-                      <span className="hidden sm:inline">元数据</span>
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <TaskPullStatus pulledAt={task.pulled_at} source={task.source} />
+                      {task.pulled_at && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleOpenPullHistory}
+                          className="h-9 md:h-10 px-3 md:px-4 shrink-0"
+                          aria-label="查看拉取历史"
+                        >
+                          <History className="h-4 w-4 md:h-5 md:w-5" />
+                        </Button>
+                      )}
+                    </div>
                   )}
-                  {/* 日志按钮 */}
+                  {/* 操作菜单 */}
                   {task && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => router.push(`/project/${encodedProjectId}/queue/${encodedQueueId}/task/${encodedTaskId}/logs`)}
-                      className="h-9 md:h-10 px-3 md:px-4 shrink-0"
-                      aria-label="查看执行日志"
-                    >
-                      <FileText className="h-4 w-4 md:h-5 md:w-5 mr-2" />
-                      <span className="hidden sm:inline">日志</span>
-                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-9 md:h-10 px-3 md:px-4 shrink-0"
+                          aria-label="任务操作"
+                        >
+                          <Info className="h-4 w-4 md:h-5 md:w-5" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => router.push(`/project/${encodedProjectId}/queue/${encodedQueueId}/task/${encodedTaskId}/metadata`)}>
+                          <Info className="mr-2 h-4 w-4" />
+                          <span>元数据</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => router.push(`/project/${encodedProjectId}/queue/${encodedQueueId}/task/${encodedTaskId}/logs`)}>
+                          <FileText className="mr-2 h-4 w-4" />
+                          <span>日志</span>
+                        </DropdownMenuItem>
+                        {task.pulled_at && (
+                          <DropdownMenuItem onClick={handleOpenPullHistory}>
+                            <History className="mr-2 h-4 w-4" />
+                            <span>拉取历史</span>
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={handleEditTask}>
+                          <Edit className="mr-2 h-4 w-4" />
+                          <span>编辑</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setMoveDialogOpen(true)}>
+                          <Move className="mr-2 h-4 w-4" />
+                          <span>移动</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onClick={() => setDeleteDialogOpen(true)}
+                          className="text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-900/20"
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          <span>删除</span>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   )}
                 </div>
                 {/* 标签列表 */}
@@ -487,7 +712,213 @@ export default function TaskDetailPage() {
         {!isLoading && task && (
           <ReplyInput onSend={handleSendReply} disabled={isLoading} />
         )}
+
+
+        {/* 删除确认对话框 */}
+        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <AlertDialogContent className="max-w-md">
+            <AlertDialogHeader>
+              <AlertDialogTitle>确认删除</AlertDialogTitle>
+              <AlertDialogDescription>
+                确定要删除任务「{task?.name}」吗？此操作不可恢复。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isDeleting} className="h-11">取消</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteTask}
+                disabled={isDeleting}
+                className="h-11 bg-red-600 hover:bg-red-700 text-white"
+              >
+                {isDeleting ? '删除中...' : '确认删除'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* 移动任务对话框 */}
+        <Dialog open={moveDialogOpen} onOpenChange={setMoveDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>移动任务</DialogTitle>
+              <DialogDescription>
+                将任务移动到其他队列或项目级
+              </DialogDescription>
+            </DialogHeader>
+            <MoveTaskDialog
+              projectId={projectId}
+              currentQueueId={queueId}
+              onMove={handleMoveTask}
+              onCancel={() => setMoveDialogOpen(false)}
+              isMoving={isMoving}
+            />
+          </DialogContent>
+        </Dialog>
+
+        {/* 拉取历史对话框 */}
+        <Dialog open={pullHistoryDialogOpen} onOpenChange={setPullHistoryDialogOpen}>
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>拉取历史</DialogTitle>
+              <DialogDescription>
+                任务的拉取历史记录
+              </DialogDescription>
+            </DialogHeader>
+            {isLoadingPullHistory ? (
+              <div className="flex items-center justify-center py-8">
+                <RefreshCw className="h-6 w-6 animate-spin text-blue-600" />
+                <span className="ml-2 text-gray-600 dark:text-gray-400">加载中...</span>
+              </div>
+            ) : (
+              <PullHistoryList 
+                history={pullHistory} 
+                currentPull={task?.pulled_at ? { pulled_at: task.pulled_at, pulled_by: task.pulled_by } : null}
+              />
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </AuthGuard>
+  )
+}
+
+/**
+ * 移动任务对话框组件
+ */
+function MoveTaskDialog({ projectId, currentQueueId, onMove, onCancel, isMoving }) {
+  const [targetQueueId, setTargetQueueId] = useState('')
+  const [queues, setQueues] = useState([])
+  const [isLoadingQueues, setIsLoadingQueues] = useState(false)
+
+  useEffect(() => {
+    if (!projectId) return
+    
+    setIsLoadingQueues(true)
+    const loadQueues = async () => {
+      try {
+        const { fetchWithAuth } = await import('@/lib/fetch-utils')
+        const encodedProjectId = encodeURIComponent(projectId)
+        const response = await fetchWithAuth(`/api/v1/projects/${encodedProjectId}/queues?pageSize=100`)
+        if (response.ok) {
+          const result = await response.json()
+          if (result.success) {
+            setQueues(result.data.items || [])
+          }
+        }
+      } catch (error) {
+        console.error('加载队列列表失败:', error)
+      } finally {
+        setIsLoadingQueues(false)
+      }
+    }
+    
+    loadQueues()
+  }, [projectId])
+
+  const handleMove = () => {
+    onMove(targetQueueId || null)
+  }
+
+  return (
+    <div className="space-y-4 py-4">
+      <div className="space-y-2">
+        <label className="text-sm font-medium">目标位置</label>
+        <select
+          value={targetQueueId}
+          onChange={(e) => setTargetQueueId(e.target.value)}
+          className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+          disabled={isMoving || isLoadingQueues}
+        >
+          <option value="">项目级（不属于任何队列）</option>
+          {queues
+            .filter(q => q.queue_id !== currentQueueId)
+            .map(queue => (
+              <option key={queue.queue_id} value={queue.queue_id}>
+                {queue.name}
+              </option>
+            ))}
+        </select>
+      </div>
+      <div className="flex justify-end gap-2 pt-4">
+        <Button
+          variant="outline"
+          onClick={onCancel}
+          disabled={isMoving}
+          className="h-11"
+        >
+          取消
+        </Button>
+        <Button
+          onClick={handleMove}
+          disabled={isMoving || isLoadingQueues}
+          className="h-11"
+        >
+          {isMoving ? '移动中...' : '确认移动'}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 拉取历史列表组件
+ */
+function PullHistoryList({ history = [], currentPull = null }) {
+  if (history.length === 0 && !currentPull) {
+    return (
+      <div className="text-center py-8">
+        <p className="text-gray-600 dark:text-gray-400">暂无拉取历史</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      {currentPull && (
+        <Card className="bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-blue-900 dark:text-blue-100">当前拉取</p>
+                <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                  拉取时间: {new Date(currentPull.pulled_at).toLocaleString('zh-CN')}
+                </p>
+                {currentPull.pulled_by && (
+                  <p className="text-xs text-blue-700 dark:text-blue-300">
+                    拉取者: {currentPull.pulled_by}
+                  </p>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      {history.map((item, index) => (
+        <Card key={index} className="bg-white dark:bg-gray-800">
+          <CardContent className="p-4">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">拉取 #{history.length - index}</p>
+                {item.released_at ? (
+                  <span className="text-xs text-gray-500">已释放</span>
+                ) : (
+                  <span className="text-xs text-blue-600">进行中</span>
+                )}
+              </div>
+              <div className="text-xs text-gray-600 dark:text-gray-400 space-y-1">
+                <p>拉取时间: {new Date(item.pulled_at).toLocaleString('zh-CN')}</p>
+                {item.pulled_by && <p>拉取者: {item.pulled_by}</p>}
+                {item.released_at && (
+                  <>
+                    <p>释放时间: {new Date(item.released_at).toLocaleString('zh-CN')}</p>
+                    {item.released_by && <p>释放者: {item.released_by}</p>}
+                  </>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
   )
 }

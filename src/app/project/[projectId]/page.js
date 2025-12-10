@@ -44,8 +44,28 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent } from '@/components/ui/card'
 import { TagInput } from '@/components/project/TagInput'
+import { ProjectTaskList } from '@/components/project/ProjectTaskList'
 
 const POLLING_INTERVAL = 20000 // 20秒轮询间隔
+
+/**
+ * 获取项目级任务列表
+ * @param {string} projectId - 项目ID
+ */
+async function fetchProjectTasks(projectId) {
+  const { fetchWithAuth } = await import('@/lib/fetch-utils')
+  const encodedProjectId = encodeURIComponent(projectId)
+  
+  try {
+    const response = await fetchWithAuth(`/api/v1/projects/${encodedProjectId}/tasks?pageSize=100`)
+    if (!response.ok) return []
+    const result = await response.json()
+    return result.success ? (result.data.items || []) : []
+  } catch (error) {
+    console.error('获取项目级任务失败:', error)
+    return []
+  }
+}
 
 /**
  * 获取项目详情页数据（合并项目信息、队列列表和统计数据）
@@ -136,6 +156,10 @@ export default function ProjectDetailPage() {
   const [isDeleting, setIsDeleting] = useState(false)
   const [isUpdating, setIsUpdating] = useState(false)
   
+  // 项目级任务相关状态
+  const [projectTasks, setProjectTasks] = useState([])
+  const [isLoadingProjectTasks, setIsLoadingProjectTasks] = useState(false)
+  
   // 元数据编辑相关状态
   const [metadataDialogOpen, setMetadataDialogOpen] = useState(false)
   const [customTitle, setCustomTitle] = useState('')
@@ -202,11 +226,26 @@ export default function ProjectDetailPage() {
   // 跟踪是否是首次加载，避免首次加载时重复请求
   const isFirstLoadRef = useRef(true)
 
+  // 加载项目级任务
+  const loadProjectTasks = useCallback(async () => {
+    if (!projectId) return
+    setIsLoadingProjectTasks(true)
+    try {
+      const tasks = await fetchProjectTasks(projectId)
+      setProjectTasks(tasks)
+    } catch (error) {
+      console.error('加载项目级任务失败:', error)
+    } finally {
+      setIsLoadingProjectTasks(false)
+    }
+  }, [projectId])
+
   // 当搜索或页码改变时，自动重新请求API
   useEffect(() => {
     // 跳过首次加载（首次加载由 useVisibilityAwarePolling 自动处理）
     if (isFirstLoadRef.current) {
       isFirstLoadRef.current = false
+      loadProjectTasks() // 首次加载时也加载项目级任务
       return
     }
 
@@ -216,6 +255,13 @@ export default function ProjectDetailPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchKeyword, page])
+
+  // 首次加载时加载项目级任务
+  useEffect(() => {
+    if (projectId && !isInitialLoading) {
+      loadProjectTasks()
+    }
+  }, [projectId, isInitialLoading, loadProjectTasks])
 
   // 页码改变处理
   const handlePageChange = useCallback((newPage) => {
@@ -450,6 +496,12 @@ export default function ProjectDetailPage() {
       setIsSavingMetadata(false)
     }
   }, [projectId, customTitle, notes, tags, toast, refetch])
+
+  // 跳转到创建任务页面
+  const handleCreateTask = useCallback(() => {
+    if (!projectId) return
+    router.push(`/project/${encodeURIComponent(projectId)}/task/new`)
+  }, [projectId, router])
 
   // 删除项目
   const handleDeleteProject = useCallback(async () => {
@@ -726,6 +778,18 @@ export default function ProjectDetailPage() {
           {/* 项目统计和趋势图 */}
           <ProjectStatsSection stats={projectStats} trendData={trendData} loading={isInitialLoading} />
 
+          {/* 项目级任务列表 */}
+          {!isInitialLoading && !error && (
+            <div className="mb-4 md:mb-5 lg:mb-6">
+              <ProjectTaskList
+                tasks={projectTasks}
+                projectId={projectId}
+                loading={isLoadingProjectTasks}
+                onCreateTask={handleCreateTask}
+              />
+            </div>
+          )}
+
           {/* 搜索区域 */}
           {!isInitialLoading && !error && (
             <SearchSection
@@ -931,6 +995,7 @@ export default function ProjectDetailPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+
         </main>
       </div>
     </AuthGuard>

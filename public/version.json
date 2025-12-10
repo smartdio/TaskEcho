@@ -1,11 +1,11 @@
 {
-  "version": "0.1.7",
+  "version": "0.1.8",
   "major": 0,
   "minor": 1,
-  "patch": 7,
-  "buildTime": "2025-12-10T09:38:28.065Z",
-  "gitCommit": "644fa00eb928516d7cf9cc5bd10cfea371a9bf47",
-  "gitCommitShort": "644fa00",
+  "patch": 8,
+  "buildTime": "2025-12-10T09:38:59.892Z",
+  "gitCommit": "a0ac881aa89ef9b2b7291c1082c34772a09e5774",
+  "gitCommitShort": "a0ac881",
   "gitBranch": "main",
-  "buildNumber": 7
+  "buildNumber": 8
 }

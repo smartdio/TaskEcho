@@ -33,6 +33,26 @@ const logSchema = new mongoose.Schema({
   }
 }, { _id: false });
 
+// 拉取历史记录子文档 Schema
+const pullHistorySchema = new mongoose.Schema({
+  pulled_at: {
+    type: Date,
+    required: true
+  },
+  pulled_by: {
+    type: String,
+    default: null
+  },
+  released_at: {
+    type: Date,
+    default: null
+  },
+  released_by: {
+    type: String,
+    default: null
+  }
+}, { _id: false });
+
 // 任务子文档 Schema
 const taskSchema = new mongoose.Schema({
   id: {
@@ -53,12 +73,58 @@ const taskSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'done', 'error'],
+    enum: ['pending', 'running', 'done', 'error', 'cancelled'],
     default: 'pending'
   },
   report: {
     type: String,
     default: null
+  },
+  tags: {
+    type: [String],
+    default: []
+  },
+  // 拉取功能相关字段
+  source: {
+    type: String,
+    enum: ['server', 'client'],
+    default: 'client'
+  },
+  created_at: {
+    type: Date,
+    default: Date.now
+  },
+  updated_at: {
+    type: Date,
+    default: Date.now
+  },
+  server_modified_at: {
+    type: Date,
+    default: null
+  },
+  pulled_at: {
+    type: Date,
+    default: null
+  },
+  pulled_by: {
+    type: String,
+    default: null
+  },
+  priority: {
+    type: mongoose.Schema.Types.Mixed,  // 支持 String ('high', 'medium', 'low') 或 Number (1-10)
+    default: null
+  },
+  expires_at: {
+    type: Date,
+    default: null
+  },
+  deleted_at: {
+    type: Date,
+    default: null
+  },
+  pull_history: {
+    type: [pullHistorySchema],
+    default: []
   },
   messages: [messageSchema],  // 对话消息数组（用于记录任务变化）
   logs: [logSchema]           // 执行日志数组（用于记录任务变化）
@@ -88,6 +154,16 @@ const queueSchema = new mongoose.Schema({
     type: Date,
     default: null,
     index: true
+  },
+  // 队列管理操作相关字段
+  last_reset_at: {
+    type: Date,
+    default: null
+  },
+  last_operation: {
+    type: String,
+    enum: ['reset', 'reset-error', 're-run'],
+    default: null
   }
 }, {
   timestamps: true
@@ -104,6 +180,19 @@ queueSchema.index({ queueId: 1 });
 
 // 普通索引：lastTaskAt（排序优化）
 queueSchema.index({ lastTaskAt: -1 });
+
+// 拉取功能相关索引（用于任务查询优化）
+// 注意：MongoDB 对嵌套字段的索引支持有限，这些索引主要用于查询优化提示
+// 实际查询性能取决于查询模式和数据结构
+queueSchema.index({ 'tasks.source': 1 });
+queueSchema.index({ 'tasks.pulled_at': 1 });
+queueSchema.index({ 'tasks.deleted_at': 1 });
+queueSchema.index({ 'tasks.server_modified_at': 1 });
+queueSchema.index({ 'tasks.priority': 1 });
+// 复合索引：用于拉取查询优化
+queueSchema.index({ 'tasks.source': 1, 'tasks.pulled_at': 1 });
+queueSchema.index({ 'tasks.source': 1, 'tasks.deleted_at': 1 });
+queueSchema.index({ 'tasks.source': 1, 'tasks.pulled_at': 1, 'tasks.deleted_at': 1 });
 
 const Queue = mongoose.models.Queue || mongoose.model('Queue', queueSchema);
 

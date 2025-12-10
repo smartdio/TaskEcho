@@ -191,3 +191,9 @@ node scripts/generate-version.js "你的 commit message"
 - 版本信息文件: `public/version.json`
 - Hook 示例文件: `.git/hooks/pre-commit.example`
 
+
+
+
+
+
+

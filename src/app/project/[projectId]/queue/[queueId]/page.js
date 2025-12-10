@@ -7,6 +7,7 @@ import { StatusFilter } from '@/components/queue/StatusFilter'
 import { TaskList } from '@/components/queue/TaskList'
 import { Pagination } from '@/components/home/Pagination'
 import { Button } from '@/components/ui/button'
+import { QueueActions } from '@/components/queue/QueueActions'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,7 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { RefreshCw, AlertCircle, Layers, MoreVertical, Edit, Trash2 } from 'lucide-react'
+import { RefreshCw, AlertCircle, Layers, MoreVertical, Edit, Trash2, Plus } from 'lucide-react'
 import { useToast as useShadcnToast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
 import { useTimestampCheck } from '@/hooks/useTimestampCheck'
@@ -30,6 +31,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 
 const POLLING_INTERVAL = 20000 // 20秒轮询间隔
 
@@ -126,6 +134,11 @@ export default function QueueDetailPage() {
   const [pageSize] = useState(100)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  
+  // 创建任务相关状态
+  
+  // 队列操作相关状态
+  const [isOperatingQueue, setIsOperatingQueue] = useState(false)
 
   // 创建检查函数（轻量级检查API）
   const checkTasks = useCallback(async () => {
@@ -218,6 +231,123 @@ export default function QueueDetailPage() {
     // 滚动到顶部
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }, [])
+
+  // 跳转到创建任务页面
+  const handleCreateTask = useCallback(() => {
+    if (!projectId || !queueId) return
+    router.push(`/project/${encodeURIComponent(projectId)}/queue/${encodeURIComponent(queueId)}/task/new`)
+  }, [projectId, queueId, router])
+
+  // 重置队列
+  const handleResetQueue = useCallback(async () => {
+    if (!projectId || !queueId) return
+
+    setIsOperatingQueue(true)
+    try {
+      const { fetchWithAuth } = await import('@/lib/fetch-utils')
+      const encodedProjectId = encodeURIComponent(projectId)
+      const encodedQueueId = encodeURIComponent(queueId)
+      const response = await fetchWithAuth(`/api/v1/projects/${encodedProjectId}/queues/${encodedQueueId}/reset`, {
+        method: 'POST'
+      })
+
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error?.message || '重置队列失败')
+      }
+
+      toast({
+        title: '成功',
+        description: '队列重置成功',
+        variant: 'default'
+      })
+
+      refetch() // 刷新数据
+    } catch (error) {
+      toast({
+        title: '操作失败',
+        description: error.message || '请稍后重试',
+        variant: 'destructive'
+      })
+    } finally {
+      setIsOperatingQueue(false)
+    }
+  }, [projectId, queueId, toast, refetch])
+
+  // 重置错误任务
+  const handleResetError = useCallback(async () => {
+    if (!projectId || !queueId) return
+
+    setIsOperatingQueue(true)
+    try {
+      const { fetchWithAuth } = await import('@/lib/fetch-utils')
+      const encodedProjectId = encodeURIComponent(projectId)
+      const encodedQueueId = encodeURIComponent(queueId)
+      const response = await fetchWithAuth(`/api/v1/projects/${encodedProjectId}/queues/${encodedQueueId}/reset-error`, {
+        method: 'POST'
+      })
+
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error?.message || '重置错误任务失败')
+      }
+
+      toast({
+        title: '成功',
+        description: '错误任务重置成功',
+        variant: 'default'
+      })
+
+      refetch() // 刷新数据
+    } catch (error) {
+      toast({
+        title: '操作失败',
+        description: error.message || '请稍后重试',
+        variant: 'destructive'
+      })
+    } finally {
+      setIsOperatingQueue(false)
+    }
+  }, [projectId, queueId, toast, refetch])
+
+  // 重新运行队列
+  const handleRerunQueue = useCallback(async () => {
+    if (!projectId || !queueId) return
+
+    setIsOperatingQueue(true)
+    try {
+      const { fetchWithAuth } = await import('@/lib/fetch-utils')
+      const encodedProjectId = encodeURIComponent(projectId)
+      const encodedQueueId = encodeURIComponent(queueId)
+      const response = await fetchWithAuth(`/api/v1/projects/${encodedProjectId}/queues/${encodedQueueId}/re-run`, {
+        method: 'POST'
+      })
+
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error?.message || '重新运行队列失败')
+      }
+
+      toast({
+        title: '成功',
+        description: '队列重新运行成功',
+        variant: 'default'
+      })
+
+      refetch() // 刷新数据
+    } catch (error) {
+      toast({
+        title: '操作失败',
+        description: error.message || '请稍后重试',
+        variant: 'destructive'
+      })
+    } finally {
+      setIsOperatingQueue(false)
+    }
+  }, [projectId, queueId, toast, refetch])
 
   // 删除队列
   const handleDeleteQueue = useCallback(async () => {
@@ -354,38 +484,57 @@ export default function QueueDetailPage() {
               <span>{queue?.name || '任务队列详情'}</span>
             </h1>
             {queue && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-9 md:h-10 px-3 md:px-4"
-                    aria-label="管理菜单"
-                  >
-                    <MoreVertical className="h-4 w-4 md:h-5 md:w-5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => {
-                    toast({
-                      title: '提示',
-                      description: '队列编辑功能开发中',
-                      variant: 'default'
-                    })
-                  }}>
-                    <Edit className="mr-2 h-4 w-4" />
-                    <span>编辑</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={() => setDeleteDialogOpen(true)}
-                    className="text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-900/20"
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    <span>删除</span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={handleCreateTask}
+                  className="h-9 md:h-10 px-3 md:px-4"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  <span className="hidden sm:inline">创建任务</span>
+                </Button>
+                <QueueActions
+                  queueId={queueId}
+                  projectId={projectId}
+                  onReset={handleResetQueue}
+                  onResetError={handleResetError}
+                  onRerun={handleRerunQueue}
+                  disabled={isOperatingQueue}
+                />
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-9 md:h-10 px-3 md:px-4"
+                      aria-label="管理菜单"
+                    >
+                      <MoreVertical className="h-4 w-4 md:h-5 md:w-5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => {
+                      toast({
+                        title: '提示',
+                        description: '队列编辑功能开发中',
+                        variant: 'default'
+                      })
+                    }}>
+                      <Edit className="mr-2 h-4 w-4" />
+                      <span>编辑</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => setDeleteDialogOpen(true)}
+                      className="text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-900/20"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      <span>删除</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             )}
           </div>
 
@@ -487,6 +636,7 @@ export default function QueueDetailPage() {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+
         </main>
       </div>
     </AuthGuard>

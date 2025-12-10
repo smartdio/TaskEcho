@@ -265,6 +265,19 @@ assert_field_exists() {
     fi
 }
 
+# URL编码函数
+url_encode() {
+    local string="$1"
+    if command -v python3 &> /dev/null; then
+        python3 -c "import urllib.parse; print(urllib.parse.quote('$string', safe=''))"
+    elif command -v python &> /dev/null; then
+        python -c "import urllib.parse; print(urllib.parse.quote('$string', safe=''))"
+    else
+        # 简单的URL编码实现（仅处理基本字符）
+        echo "$string" | sed 's/ /%20/g; s/!/%21/g; s/"/%22/g; s/#/%23/g; s/\$/%24/g; s/&/%26/g; s/'\''/%27/g; s/(/%28/g; s/)/%29/g; s/*/%2A/g; s/+/%2B/g; s/,/%2C/g; s/\//%2F/g; s/:/%3A/g; s/;/%3B/g; s/=/%3D/g; s/?/%3F/g; s/@/%40/g; s/\[/%5B/g; s/\]/%5D/g'
+    fi
+}
+
 # 验证JSON响应字段值
 assert_json_field() {
     local response="$1"

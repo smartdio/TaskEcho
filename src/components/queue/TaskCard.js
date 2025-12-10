@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 import { ClipboardList, Circle } from 'lucide-react'
+import { TaskPullStatus } from '@/components/pull/TaskPullStatus'
 
 /**
  * 格式化时间显示
@@ -80,7 +81,7 @@ function truncateText(text, maxLength = 100) {
  * @param {string} props.queueId - 队列ID
  */
 export function TaskCard({ task, projectId, queueId }) {
-  const { id, name, spec_file = [], status, updated_at, prompt } = task || {}
+  const { id, name, spec_file = [], status, updated_at, prompt, source, pulled_at } = task || {}
 
   // 对项目ID、队列ID和任务ID进行URL编码，因为ID可能包含特殊字符
   const encodedProjectId = encodeURIComponent(projectId || '')
@@ -103,10 +104,13 @@ export function TaskCard({ task, projectId, queueId }) {
               <ClipboardList className="h-5 w-5 md:h-6 md:w-6 lg:h-7 lg:w-7 text-blue-600 dark:text-blue-400 shrink-0" aria-hidden="true" />
               <span className="truncate">{name || '未命名任务'}</span>
             </h3>
-            {/* 最后更新时间 */}
-            <span className="text-xs md:text-sm text-gray-500 dark:text-gray-400 shrink-0 whitespace-nowrap">
-              {formatDateTime(updated_at)}
-            </span>
+            {/* 拉取状态和最后更新时间 */}
+            <div className="flex items-center gap-2 shrink-0">
+              <TaskPullStatus pulledAt={pulled_at} source={source} />
+              <span className="text-xs md:text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                {formatDateTime(updated_at)}
+              </span>
+            </div>
           </div>
 
           {/* Prompt内容 */}

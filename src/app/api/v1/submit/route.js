@@ -462,6 +462,14 @@ async function handlePOST(request, context) {
         }
       }
       
+      // 检查任务是否已存在且来源为 server（服务端创建的任务）
+      const isServerTask = existingTask && existingTask.source === 'server';
+      
+      // 如果任务已存在且是服务端任务，检测冲突
+      // 默认策略：客户端推送覆盖服务端编辑
+      // 可选策略：返回409错误（暂不实现，使用默认策略）
+      
+      const now = new Date();
       const task = {
         id: taskData.id,
         name: taskData.name,
@@ -470,7 +478,20 @@ async function handlePOST(request, context) {
         status: clientStatus,
         report: taskData.report || null,
         messages: messages,
-        logs: logs
+        logs: logs,
+        // 拉取功能相关字段
+        source: 'client',  // 客户端推送的任务标记为 client
+        created_at: existingTask?.created_at || now,  // 如果任务已存在，保留原有创建时间
+        updated_at: now,  // 更新时间为当前时间
+        server_modified_at: existingTask?.server_modified_at || null,  // 保留服务端修改时间
+        // 如果任务已被拉取，客户端推送后不清除拉取状态（保留拉取历史）
+        pulled_at: existingTask?.pulled_at || null,
+        pulled_by: existingTask?.pulled_by || null,
+        priority: existingTask?.priority || taskData.priority || null,
+        expires_at: existingTask?.expires_at || taskData.expires_at || null,
+        deleted_at: null,  // 客户端推送时清除删除标记
+        pull_history: existingTask?.pull_history || [],
+        tags: taskData.tags || existingTask?.tags || []
       };
       
       if (index < 3) {

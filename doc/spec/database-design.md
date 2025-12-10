@@ -240,6 +240,11 @@ queueSchema.index({ projectId: 1, queueId: 1 }, { unique: true });
 - 普通索引：`projectId`（关联查询）
 - 普通索引：`queueId`（查询优化）
 - 普通索引：`lastTaskAt`（排序优化）
+- **拉取功能相关索引**（在 tasks 数组字段上）：
+  - `{ projectId: 1, 'tasks.source': 1, 'tasks.pulled_at': 1, 'tasks.deleted_at': 1 }`（拉取查询优化）
+  - `{ projectId: 1, 'tasks.server_modified_at': 1 }`（服务端修改查询）
+  - `{ projectId: 1, 'tasks.priority': -1 }`（优先级排序）
+  - `{ projectId: 1, 'tasks.expires_at': 1 }`（过期任务查询）
 
 **字段说明**：
 - `_id`：MongoDB 自动生成的 ObjectId
@@ -252,10 +257,24 @@ queueSchema.index({ projectId: 1, queueId: 1 }, { unique: true });
   - `name`：任务名称
   - `prompt`：任务提示文本
   - `spec_file`：规范文件路径数组（文本数组）
-  - `status`：任务状态（pending/done/error）
+  - `status`：任务状态（pending/running/done/error/cancelled）
   - `report`：报告文件路径（可选）
+  - `tags`：标签数组
+  - **拉取功能相关字段**：
+    - `source`：任务来源，`'server'`（服务端创建）或 `'client'`（客户端推送），默认 `'client'`
+    - `created_at`：任务创建时间
+    - `updated_at`：任务最后更新时间
+    - `server_modified_at`：服务端最后修改时间（null表示未被服务端修改）
+    - `pulled_at`：任务被拉取的时间戳（null表示未拉取）
+    - `pulled_by`：拉取任务的客户端标识
+    - `priority`：任务优先级，支持字符串（'high', 'medium', 'low'）或数字（1-10）
+    - `expires_at`：任务过期时间（可选）
+    - `deleted_at`：软删除时间戳（null表示未删除）
+    - `pull_history`：拉取历史记录数组，记录每次拉取和释放的信息
   - `messages`：对话消息数组，嵌入在任务中，用于记录任务变化（系统运行时动态添加）
   - `logs`：执行日志数组，嵌入在任务中，用于记录任务变化（系统运行时动态添加）
+- `last_reset_at`：最后重置时间（队列操作相关）
+- `last_operation`：最后操作类型（'reset', 'reset-error', 're-run' 或 null）
 - `lastTaskAt`：最后任务更新时间，用于项目详情页排序
 - `createdAt`：创建时间，自动设置
 - `updatedAt`：更新时间，自动更新
@@ -283,7 +302,84 @@ queueSchema.index({ projectId: 1, queueId: 1 }, { unique: true });
 
 ---
 
-### 2.3 API Key 集合 (api_keys)
+### 2.3 独立任务集合 (tasks)
+
+**集合名**：`tasks`
+
+**功能说明**：存储项目级任务，这些任务不属于任何队列。用于支持服务端直接创建和管理任务。
+
+**文档结构**：
+
+```javascript
+{
+  _id: ObjectId,                    // MongoDB 自动生成的主键
+  projectId: ObjectId,              // 关联的项目ID（引用 projects 集合）
+  taskId: String,                   // 外部唯一标识（在项目内唯一）
+  name: String,                     // 任务名称
+  prompt: String,                   // 任务提示文本
+  spec_file: [String],              // 规范文件路径数组
+  status: String,                   // 任务状态（pending/running/done/error/cancelled）
+  report: String,                   // 报告文件路径（可选）
+  tags: [String],                   // 标签数组
+  source: String,                   // 任务来源：'server'（服务端创建）或 'client'（客户端推送）
+  created_at: Date,                 // 任务创建时间
+  updated_at: Date,                 // 任务最后更新时间
+  server_modified_at: Date,         // 服务端最后修改时间
+  pulled_at: Date,                  // 任务被拉取的时间戳（null表示未拉取）
+  pulled_by: String,                // 拉取任务的客户端标识
+  priority: Mixed,                  // 任务优先级：String ('high', 'medium', 'low') 或 Number (1-10)
+  expires_at: Date,                 // 任务过期时间（可选）
+  deleted_at: Date,                 // 软删除时间戳（null表示未删除）
+  pull_history: [pullHistorySchema], // 拉取历史记录数组
+  messages: [messageSchema],        // 对话消息数组
+  logs: [logSchema]                 // 执行日志数组
+}
+```
+
+**Mongoose Schema**：参考 `src/lib/models/Task.js`
+
+**索引设计**：
+- 唯一索引：`(projectId, taskId)`（确保项目内任务唯一）
+- 拉取功能相关索引：
+  - `{ projectId: 1, source: 1, pulled_at: 1, deleted_at: 1 }`（拉取查询优化）
+  - `{ projectId: 1, server_modified_at: 1 }`（服务端修改查询）
+  - `{ projectId: 1, priority: -1 }`（优先级排序）
+  - `{ projectId: 1, expires_at: 1 }`（过期任务查询）
+
+**字段说明**：
+- `_id`：MongoDB 自动生成的 ObjectId
+- `projectId`：关联的项目ID（引用 projects 集合）
+- `taskId`：外部系统提供的唯一标识（在项目内唯一）
+- `name`：任务名称
+- `prompt`：任务提示文本
+- `spec_file`：规范文件路径数组
+- `status`：任务状态（pending/running/done/error/cancelled）
+- `report`：报告文件路径（可选）
+- `tags`：标签数组
+- **拉取功能相关字段**：
+  - `source`：任务来源，`'server'`（服务端创建）或 `'client'`（客户端推送），默认 `'server'`
+  - `created_at`：任务创建时间
+  - `updated_at`：任务最后更新时间
+  - `server_modified_at`：服务端最后修改时间（默认等于创建时间）
+  - `pulled_at`：任务被拉取的时间戳（null表示未拉取）
+  - `pulled_by`：拉取任务的客户端标识
+  - `priority`：任务优先级，支持字符串（'high', 'medium', 'low'）或数字（1-10）
+  - `expires_at`：任务过期时间（可选）
+  - `deleted_at`：软删除时间戳（null表示未删除）
+  - `pull_history`：拉取历史记录数组，记录每次拉取和释放的信息
+- `messages`：对话消息数组
+- `logs`：执行日志数组
+
+**业务规则**：
+- `(projectId, taskId)` 组合唯一，确保项目内任务不重复
+- 任务可以通过服务端API创建，也可以通过客户端推送（通过 submit 接口）
+- 拉取操作是原子的，使用 `findOneAndUpdate` 确保不会重复拉取
+- 软删除的任务不会被拉取（`deleted_at` 不为 null）
+- 过期任务（`expires_at < now`）不会被拉取
+
+---
+
+### 2.4 API Key 集合 (api_keys)
 
 **集合名**：`api_keys`
 
@@ -416,9 +512,12 @@ const apiKeySchema = new mongoose.Schema({
 ### 4.2 唯一索引
 - `projects.projectId`：项目外部标识唯一
 - `queues(projectId, queueId)`：项目内队列唯一（复合唯一索引）
+- `tasks(projectId, taskId)`：项目内独立任务唯一（复合唯一索引）
 - `api_keys.key`：API Key 哈希值唯一
 
-**注意**：任务嵌入在队列的 `tasks` 数组中，通过应用层逻辑确保 `taskId` 在队列内唯一，无需数据库唯一索引。
+**注意**：
+- 队列中的任务嵌入在队列的 `tasks` 数组中，通过应用层逻辑确保 `taskId` 在队列内唯一，无需数据库唯一索引
+- 独立任务存储在 `tasks` 集合中，通过复合唯一索引 `(projectId, taskId)` 确保唯一性
 
 ### 4.3 引用索引
 - `queues.projectId`：关联项目查询
@@ -429,6 +528,12 @@ const apiKeySchema = new mongoose.Schema({
 - `tasks.status`：任务状态过滤
 - `tasks.updatedAt`：任务更新时间排序
 - `api_keys.isActive`：API Key 激活状态过滤
+- **拉取功能相关索引**：
+  - `tasks(projectId, source, pulled_at, deleted_at)`：拉取查询优化
+  - `tasks(projectId, server_modified_at)`：服务端修改查询
+  - `tasks(projectId, priority)`：优先级排序
+  - `tasks(projectId, expires_at)`：过期任务查询
+  - `queues.tasks(source, pulled_at, deleted_at)`：队列任务拉取查询优化（嵌入字段索引）
 
 ### 4.5 索引创建示例
 
@@ -442,8 +547,18 @@ db.queues.createIndex({ projectId: 1, queueId: 1 }, { unique: true });
 db.queues.createIndex({ projectId: 1 });
 db.queues.createIndex({ queueId: 1 });
 db.queues.createIndex({ lastTaskAt: -1 });
+// 拉取功能相关索引（嵌入字段）
+db.queues.createIndex({ projectId: 1, 'tasks.source': 1, 'tasks.pulled_at': 1, 'tasks.deleted_at': 1 });
+db.queues.createIndex({ projectId: 1, 'tasks.server_modified_at': 1 });
+db.queues.createIndex({ projectId: 1, 'tasks.priority': -1 });
+db.queues.createIndex({ projectId: 1, 'tasks.expires_at': 1 });
 
-// 注意：任务嵌入在队列中，无需独立的索引
+// 独立任务集合索引
+db.tasks.createIndex({ projectId: 1, taskId: 1 }, { unique: true });
+db.tasks.createIndex({ projectId: 1, source: 1, pulled_at: 1, deleted_at: 1 });
+db.tasks.createIndex({ projectId: 1, server_modified_at: 1 });
+db.tasks.createIndex({ projectId: 1, priority: -1 });
+db.tasks.createIndex({ projectId: 1, expires_at: 1 });
 
 // API Key 集合索引
 db.api_keys.createIndex({ key: 1 }, { unique: true });
